@@ -21,14 +21,17 @@ use std::time::Duration;
 
 const TICK: Duration = Duration::from_millis(250);
 
-pub fn run(db: Db, today: NaiveDate) -> Result<()> {
+/// Runs the screens until the user quits, then hands the database back so
+/// the quit path can read what this run wrote.
+pub fn run(db: Db, today: NaiveDate) -> Result<Db> {
     let mut app = App::new(db, today)?;
     // `try_init` enables raw mode, enters the alternate screen, and installs a
     // panic hook that restores the terminal before unwinding.
     let mut terminal = ratatui::try_init()?;
     let result = event_loop(&mut terminal, &mut app);
     ratatui::try_restore()?;
-    result
+    result?;
+    Ok(app.into_db())
 }
 
 /// Draw only when something changed: a key press, a resize, or a status

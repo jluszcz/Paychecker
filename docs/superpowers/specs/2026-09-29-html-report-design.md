@@ -37,7 +37,8 @@ dir = "~/Dropbox/pay"   # required
 - After `tui::run` returns and the terminal is restored, `main` calls
   `report::write_if_enabled`. A failure prints `report: <error>` to stderr and the run still
   exits 0. A written page prints nothing.
-- `--db` and `--today` apply to both.
+- `--db`, `--today` and `--config` (the config file path, for testing and scratch runs) are global
+  and apply to both.
 
 ## Database — `Db::wrote_rows`
 

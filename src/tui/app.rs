@@ -84,6 +84,10 @@ impl App {
         self.quit
     }
 
+    pub(super) fn into_db(self) -> Db {
+        self.db
+    }
+
     /// With no modal open, the status line lasts until the next key or
     /// `STATUS_TTL`. With one open, it lasts until the modal closes, so an
     /// error stays in view while the form is being fixed.

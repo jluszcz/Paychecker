@@ -89,6 +89,13 @@ impl Db {
         tx.commit()?;
         Ok(value)
     }
+
+    /// Whether this connection has inserted, updated or deleted a row. It
+    /// counts this run only, so a change made by another process leaves it
+    /// `false`.
+    pub fn wrote_rows(&self) -> bool {
+        self.conn.total_changes() > 0
+    }
 }
 
 /// `~/.local/share/paychecker/paychecks.db`.
@@ -183,5 +190,37 @@ mod tests {
             assert_eq!(Kind::from_sql_text(kind.as_str()), Some(kind));
         }
         assert_eq!(Kind::from_sql_text("bonus"), None);
+    }
+
+    #[test]
+    fn reopening_a_database_without_writing_reports_no_rows_written() {
+        let dir = scratch_dir("wrote_none");
+        let path = dir.join("paychecks.db");
+        drop(open(&path).unwrap());
+        assert!(!open(&path).unwrap().wrote_rows());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A brand-new file's seed fields are rows this run wrote, so its first
+    /// quit writes a page rather than finding nothing changed.
+    #[test]
+    fn creating_a_database_counts_its_seed_fields_as_rows_written() {
+        assert!(open_in_memory().unwrap().wrote_rows());
+    }
+
+    #[test]
+    fn saving_a_paycheck_reports_rows_written() {
+        let dir = scratch_dir("wrote_some");
+        let path = dir.join("paychecks.db");
+        drop(open(&path).unwrap());
+        let db = open(&path).unwrap();
+        let salary = db.field_id("Salary");
+        db.insert_paycheck(
+            NaiveDate::from_ymd_opt(2026, 1, 2).unwrap(),
+            &[(salary, Cents(400_000))],
+        )
+        .unwrap();
+        assert!(db.wrote_rows());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

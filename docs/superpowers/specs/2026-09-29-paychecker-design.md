@@ -150,8 +150,8 @@ Net Pay            65.00%    65.00%    65.00%    65.00% │    65.00%
   3. A blank line, then the percentage block: every deduction field, then Net Pay.
 - Archived fields that are visible render the same as active ones.
 - A year with no paychecks shows the labels and a hint to press `a`.
-- `a` add a paycheck, `e` edit the selected one, `d` delete the selected one (`y` confirms,
-  anything else cancels).
+- `a` add a paycheck, `e` edit the selected one, `d` delete the selected one: the
+  status line asks, `y` confirms, and any other key cancels.
 
 ### Paycheck form (modal, used for add and edit)
 

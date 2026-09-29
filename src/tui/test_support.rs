@@ -91,3 +91,9 @@ pub(super) fn app_with(paychecks: &[(NaiveDate, &[(&str, i64)])], today: NaiveDa
 pub(super) fn screen(app: &mut App, width: u16, height: u16) -> String {
     draw(width, height, |frame| app.render(frame))
 }
+
+pub(super) fn type_text(app: &mut App, text: &str) {
+    for c in text.chars() {
+        press(app, KeyCode::Char(c));
+    }
+}

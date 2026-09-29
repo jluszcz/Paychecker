@@ -1,12 +1,17 @@
 //! The modal forms: a paycheck's date and amounts, and a field's name and kind.
 
+use super::centered;
 use super::text::{TextBuffer, edit_key, is_bare};
 use crate::calc::{self, Totals};
 use crate::db::{Field, FieldId, Kind, Paycheck, PaycheckId};
 use crate::money::Cents;
 use anyhow::{Context, Result, anyhow};
 use chrono::{Datelike, Months, NaiveDate, TimeDelta};
+use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::layout::Rect;
+use ratatui::text::Line;
+use ratatui::widgets::{Block, Clear, Paragraph};
 
 /// `YYYY-MM-DD`, or MisterManager's `M/D` shorthand.
 pub(super) fn parse_date(raw: &str, today: NaiveDate) -> Result<NaiveDate> {
@@ -300,6 +305,59 @@ impl FieldForm {
         }
         Outcome::Continue
     }
+}
+
+/// The live line under the amounts: `—` while any amount fails to parse.
+pub(super) fn net_line(totals: Option<Totals>) -> String {
+    match totals {
+        Some(t) => format!(
+            "Net {}  {}",
+            t.net,
+            calc::show(calc::percent(t.net, t.income))
+        ),
+        None => "Net —".to_string(),
+    }
+}
+
+pub(super) fn render_paycheck(frame: &mut Frame, area: Rect, form: &PaycheckForm) {
+    let label_w = form
+        .amounts
+        .iter()
+        .map(|a| a.name.chars().count())
+        .max()
+        .unwrap_or(0)
+        .max("Date".len());
+    let rows = std::iter::once(("Date", &form.date))
+        .chain(form.amounts.iter().map(|a| (a.name.as_str(), &a.text)));
+    let mut lines: Vec<Line> = rows
+        .enumerate()
+        .map(|(i, (label, text))| {
+            let marker = if i == form.focus { "›" } else { " " };
+            Line::from(format!("{marker} {label:<label_w$}  {}", text.value()))
+        })
+        .collect();
+    lines.push(Line::default());
+    lines.push(Line::from(net_line(form.totals())));
+    let title = if form.editing.is_some() {
+        " Edit paycheck "
+    } else {
+        " Add paycheck "
+    };
+    let width = (label_w + 4 + 16).max(32) as u16 + 2;
+    let popup = centered(area, width, lines.len() as u16 + 2);
+    frame.render_widget(Clear, popup);
+    frame.render_widget(
+        Paragraph::new(lines).block(Block::bordered().title(title)),
+        popup,
+    );
+    let caret = match form.focus {
+        0 => form.date.caret(),
+        n => form.amounts[n - 1].text.caret(),
+    };
+    frame.set_cursor_position((
+        popup.x + 1 + (label_w + 4 + caret) as u16,
+        popup.y + 1 + form.focus as u16,
+    ));
 }
 
 #[cfg(test)]

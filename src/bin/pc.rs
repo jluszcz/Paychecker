@@ -43,6 +43,9 @@ fn main() -> Result<()> {
     // Before the TUI opens: a config that does not parse should say so on a
     // terminal in its normal mode, not after a session's work.
     let cfg = config::load(&config_path)?;
+    // A run pointed at another database or another day is a scratch session;
+    // see `report::write_if_enabled`.
+    let scratch = cli.db.is_some() || cli.today.is_some();
     let path = match cli.db {
         Some(path) => path,
         None => db::default_path()?,
@@ -55,7 +58,7 @@ fn main() -> Result<()> {
             let db = tui::run(db, today)?;
             // The session's work is already saved, so a report that cannot be
             // written is a warning, not a failed run.
-            if let Err(e) = report::write_if_enabled(&db, &cfg, today) {
+            if let Err(e) = report::write_if_enabled(&db, &cfg, today, scratch) {
                 eprintln!("report: {e:#}");
             }
         }

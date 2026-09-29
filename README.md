@@ -32,16 +32,17 @@ It carries no script and loads nothing, so it reads on a phone offline. Pointing
 synced folder puts it there.
 
 The write happens after the screen is torn down. A failure prints to stderr and does not fail
-the run. The file is written beside its name and renamed into place, so a sync client never
+the run. A run given `--db` or `--today` writes nothing on quit: it is a scratch session, and the
+configured page belongs to the real database. The file is written beside its name and renamed into place, so a sync client never
 uploads half a page.
 
 A quit that changed nothing leaves the page alone if it was already written that day. That check
-sees only this run's writes and the file's timestamp, so a `--today` run or a session held open
-across midnight can leave a stale page until the next quit that changes something.
+sees only this run's writes and the file's timestamp, so a session held open across midnight can
+leave a stale page until the next quit that changes something.
 
 ```bash
 pc report                    # into the configured dir, never skipped
-pc report --dir /tmp/export  # anywhere, config or no config
+pc report --dir /tmp/export  # anywhere, [report] section or not
 ```
 
 ## Development

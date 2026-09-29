@@ -36,7 +36,8 @@ dir = "~/Dropbox/pay"   # required
   error telling the user to add one or pass `--dir`. A failure is an error exit.
 - After `tui::run` returns and the terminal is restored, `main` calls
   `report::write_if_enabled`. A failure prints `report: <error>` to stderr and the run still
-  exits 0. A written page prints nothing.
+  exits 0. A written page prints nothing. A run given `--db` or `--today` skips it
+  (`Outcome::Skipped`): it is a scratch session, and the configured page is the real database's.
 - `--db`, `--today` and `--config` (the config file path, for testing and scratch runs) are global
   and apply to both.
 
@@ -60,8 +61,8 @@ connection only, which is the documented blind spot of the gate below.
 - `is_due(last_written: Option<NaiveDate>, today, wrote_rows) -> bool`:
   `wrote_rows || last_written != Some(today)`.
 - `written_on(path) -> Option<NaiveDate>`: the local date of the file's mtime.
-- `write_if_enabled(db, cfg, today) -> Result<Outcome>`, where
-  `Outcome { Disabled, Unchanged, Written(Written) }`:
+- `write_if_enabled(db, cfg, today, scratch) -> Result<Outcome>`, where
+  `Outcome { Disabled, Skipped, Unchanged, Written(Written) }`:
   - `Disabled` when there is no `[report]` section.
   - `Unchanged` when `!is_due(...)`.
   - `Written` otherwise.

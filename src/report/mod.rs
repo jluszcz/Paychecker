@@ -80,6 +80,8 @@ pub struct Written {
 pub enum Outcome {
     /// No `[report]` section.
     Disabled,
+    /// A `--db` or `--today` run; see [`write_if_enabled`].
+    Skipped,
     /// Today's page is already there, and this run wrote no rows.
     Unchanged,
     Written(Written),
@@ -111,6 +113,12 @@ fn written_on(path: &Path) -> Option<NaiveDate> {
 /// one error path to clean up after.
 fn write_then_rename(temp: &Path, path: &Path, page: &[u8]) -> Result<()> {
     std::fs::write(temp, page).with_context(|| format!("writing {}", temp.display()))?;
+    // The rename replaces the file rather than rewriting it, so a page the
+    // owner narrowed to themselves would otherwise reopen at the umask default.
+    if let Some(existing) = std::fs::metadata(path).ok().filter(|m| m.is_file()) {
+        std::fs::set_permissions(temp, existing.permissions())
+            .with_context(|| format!("setting permissions on {}", temp.display()))?;
+    }
     std::fs::rename(temp, path).with_context(|| format!("renaming onto {}", path.display()))
 }
 
@@ -136,10 +144,17 @@ pub fn write(db: &Db, dir: &Path, today: NaiveDate) -> Result<Written> {
 }
 
 /// Write the report on quit, if the config asks for one and it is due.
-pub fn write_if_enabled(db: &Db, cfg: &Config, today: NaiveDate) -> Result<Outcome> {
+///
+/// `scratch` is a run given `--db` or `--today`. The configured directory
+/// holds the page for the real database on the real day, so such a run skips
+/// before anything is read; `pc report --dir` is how it writes one.
+pub fn write_if_enabled(db: &Db, cfg: &Config, today: NaiveDate, scratch: bool) -> Result<Outcome> {
     let Some(report) = cfg.report.as_ref() else {
         return Ok(Outcome::Disabled);
     };
+    if scratch {
+        return Ok(Outcome::Skipped);
+    }
     let dir = report.dir()?;
     if !is_due(written_on(&dir.join(FILE_NAME)), today, db.wrote_rows()) {
         return Ok(Outcome::Unchanged);
@@ -223,10 +238,48 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn rewriting_the_page_keeps_the_permissions_it_was_given() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = scratch("perms");
+        let db = with_checks(&[day(2026, 1, 2)]);
+        let written = write(&db, &dir, day(2026, 1, 2)).unwrap();
+        std::fs::set_permissions(&written.path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        write(&db, &dir, day(2026, 1, 2)).unwrap();
+        let mode = std::fs::metadata(&written.path)
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A `--db` or `--today` run is a scratch session, and the configured
+    /// directory holds the page for the real database: overwriting it would
+    /// put scratch figures on the phone.
+    #[test]
+    fn a_scratch_run_leaves_the_configured_page_alone() {
+        let dir = scratch("scratch_run");
+        let db = with_checks(&[day(2026, 1, 2)]);
+        let outcome =
+            write_if_enabled(&db, &Config::reporting_to(&dir), day(2026, 1, 2), true).unwrap();
+        assert!(matches!(outcome, Outcome::Skipped), "{outcome:?}");
+        assert!(
+            !dir.exists(),
+            "a scratch run wrote into the configured directory"
+        );
+    }
+
     #[test]
     fn no_report_section_writes_nothing() {
-        let outcome =
-            write_if_enabled(&with_checks(&[]), &Config::default(), day(2026, 1, 2)).unwrap();
+        let outcome = write_if_enabled(
+            &with_checks(&[]),
+            &Config::default(),
+            day(2026, 1, 2),
+            false,
+        )
+        .unwrap();
         assert!(matches!(outcome, Outcome::Disabled), "{outcome:?}");
     }
 
@@ -238,7 +291,7 @@ mod tests {
         let db = reopened(&dir);
         let today = Local::now().date_naive();
         write(&db, &dir, today).unwrap();
-        let outcome = write_if_enabled(&db, &Config::reporting_to(&dir), today).unwrap();
+        let outcome = write_if_enabled(&db, &Config::reporting_to(&dir), today, false).unwrap();
         assert!(matches!(outcome, Outcome::Unchanged), "{outcome:?}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -249,7 +302,7 @@ mod tests {
         let db = with_checks(&[day(2026, 1, 2)]);
         let today = Local::now().date_naive();
         write(&db, &dir, today).unwrap();
-        let outcome = write_if_enabled(&db, &Config::reporting_to(&dir), today).unwrap();
+        let outcome = write_if_enabled(&db, &Config::reporting_to(&dir), today, false).unwrap();
         assert!(matches!(outcome, Outcome::Written(_)), "{outcome:?}");
         std::fs::remove_dir_all(&dir).unwrap();
     }

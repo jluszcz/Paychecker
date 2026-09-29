@@ -14,10 +14,6 @@ cargo run --bin pc -- --db /tmp/scratch.db --today 2026-01-16
 
 ## Design
 
-`docs/superpowers/specs/2026-09-29-paychecker-design.md` is the source of truth for the schema,
-the money and percentage semantics, the module layout, and every screen's keys. Read it before
-changing any of them, and update it in the same change when behavior deliberately departs from it.
-
 Paychecker borrows its stack and conventions from the sibling project MisterManager (Rust,
 ratatui, rusqlite). Pieces such as `TextBuffer`/`edit_key` and the migration pattern are copied
 in and trimmed rather than shared through a common crate.

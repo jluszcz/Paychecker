@@ -3,3 +3,4 @@
 pub mod calc;
 pub mod db;
 pub mod money;
+pub mod tui;

@@ -19,6 +19,8 @@ pub(super) struct SheetView {
     pub(super) selected: usize,
     /// The first paycheck column drawn.
     scroll: usize,
+    /// How many paycheck columns the last draw fit: one page.
+    visible: usize,
     /// The first row drawn below the pinned header. `render` clamps it, so
     /// callers may step it past the end.
     pub(super) row_scroll: usize,
@@ -30,7 +32,20 @@ impl SheetView {
             year,
             selected,
             scroll: 0,
+            visible: 1,
             row_scroll: 0,
+        }
+    }
+
+    /// Move the selection and the drawn columns together by a page, so the
+    /// selected paycheck keeps its place on screen. `last` is the last index.
+    pub(super) fn page(&mut self, forward: bool, last: usize) {
+        if forward {
+            self.selected = (self.selected + self.visible).min(last);
+            self.scroll += self.visible;
+        } else {
+            self.selected = self.selected.saturating_sub(self.visible);
+            self.scroll = self.scroll.saturating_sub(self.visible);
         }
     }
 }
@@ -52,13 +67,15 @@ pub(super) fn render(frame: &mut Frame, area: Rect, view: &mut SheetView, sheet:
         + 2;
     let room = usize::from(area.width).saturating_sub(label_w + 3 + COL);
     let visible = (room / (COL + 1)).max(1);
+    view.visible = visible;
+    let len = sheet.columns.len();
+    view.scroll = view.scroll.min(len.saturating_sub(visible));
     if view.selected < view.scroll {
         view.scroll = view.selected;
     }
     if view.selected >= view.scroll + visible {
         view.scroll = view.selected + 1 - visible;
     }
-    let len = sheet.columns.len();
     let start = view.scroll.min(len);
     let end = (start + visible).min(len);
 
@@ -292,6 +309,25 @@ mod tests {
         assert_eq!(
             lines[0],
             format!("{:<LABEL$} {:>10} │ {:>10}", "", "◀ 01-02 ▶", "YTD")
+        );
+    }
+
+    #[test]
+    fn paging_past_the_end_keeps_a_full_screen_of_columns() {
+        let fields = fields();
+        let checks = checks(&fields, &[(1, 2), (1, 16), (1, 30)]);
+        let mut view = SheetView::new(2026, 0);
+        // At 52 wide, two paycheck columns fit.
+        drawn(52, &mut view, &fields, &checks);
+        view.page(true, 2);
+        assert_eq!(view.selected, 2);
+        let lines = drawn(52, &mut view, &fields, &checks);
+        assert_eq!(
+            lines[0],
+            format!(
+                "{:<LABEL$} {:>10} {:>10} │ {:>10}",
+                "", "01-16", "◀ 01-30 ▶", "YTD"
+            )
         );
     }
 

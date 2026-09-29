@@ -4,6 +4,7 @@
 // to `run`.
 #![allow(dead_code)]
 
+mod fields;
 mod form;
 mod sheet;
 mod text;

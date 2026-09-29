@@ -69,6 +69,17 @@ fn minify(page: &str) -> Vec<u8> {
     minify_html::minify(page.as_bytes(), &cfg)
 }
 
+/// A size for a person to read in a one-line message: whole KiB, rounded up
+/// so a small page never reads as `0 KiB`, and whole MiB from one up.
+pub fn human_bytes(bytes: u64) -> String {
+    const MIB: u64 = 1024 * 1024;
+    if bytes >= MIB {
+        format!("{} MiB", bytes / MIB)
+    } else {
+        format!("{} KiB", bytes.div_ceil(1024))
+    }
+}
+
 /// A page that reached the disk: where it landed, and how big it is.
 #[derive(Debug)]
 pub struct Written {
@@ -311,6 +322,30 @@ mod tests {
     /// dropped an id or reordered an input past its panel would leave a page
     /// that renders and then does nothing. Quotes come off before matching,
     /// so which attributes the minifier unquotes stays its business.
+    #[test]
+    fn minification_leaves_the_column_bands_intact() {
+        let dir = scratch("bands");
+        let written = write(&with_checks(&[day(2026, 1, 2)]), &dir, day(2026, 1, 2)).unwrap();
+        let page = std::fs::read_to_string(&written.path).unwrap();
+        assert!(
+            page.contains(":nth-child(2n):not(:last-child){background:var(--band)}")
+                || page.contains(":nth-child(even):not(:last-child){background:var(--band)}"),
+            "the band rule did not survive: {page}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_size_under_a_mebibyte_is_whole_kibibytes_rounded_up() {
+        assert_eq!(human_bytes(2048), "2 KiB");
+        assert_eq!(human_bytes(1025), "2 KiB");
+    }
+
+    #[test]
+    fn a_size_of_a_mebibyte_or_more_is_whole_mebibytes() {
+        assert_eq!(human_bytes(4 * 1024 * 1024), "4 MiB");
+    }
+
     #[test]
     fn minification_leaves_every_tab_and_its_switch_intact() {
         let dir = scratch("switches");

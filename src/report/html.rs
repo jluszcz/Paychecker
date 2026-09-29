@@ -149,12 +149,18 @@ fn grid(sheet: &Sheet) -> String {
 /// wrap: a comma or a hyphen is a break opportunity a narrow column would
 /// take, drawing `4,` over `000.00`.
 ///
+/// Every other paycheck column is shaded: a year is ~26 look-alike columns
+/// of figures, and the band keeps the eye on one down the page. The label is
+/// the first cell of every row and YTD the last, so `even` minus the last is
+/// exactly the 1st, 3rd, 5th... paycheck; the gap row's one cell is neither.
+///
 /// The radios are moved off the page rather than `display:none`d, which would
 /// take them out of the focus order.
 const STYLE: &str = "\
-    :root{color-scheme:light dark;--bg:#ffffff;--fg:#1a1a1a;--rule:#dddddd;--muted:#666666}\
+    :root{color-scheme:light dark;--bg:#ffffff;--fg:#1a1a1a;--rule:#dddddd;--muted:#666666;\
+    --band:#f2f3f5}\
     @media (prefers-color-scheme: dark){\
-    :root{--bg:#121212;--fg:#eeeeee;--rule:#333333;--muted:#999999}}\
+    :root{--bg:#121212;--fg:#eeeeee;--rule:#333333;--muted:#999999;--band:#1e2126}}\
     body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;\
     margin:0;padding:1rem;background:var(--bg);color:var(--fg)}\
     table{border-collapse:separate;border-spacing:0;font-size:0.82rem}\
@@ -162,6 +168,7 @@ const STYLE: &str = "\
     th{font-weight:600}\
     .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}\
     .d{white-space:nowrap}\
+    tr>:nth-child(even):not(:last-child){background:var(--band)}\
     tr>th:first-child{position:sticky;left:0;background:var(--bg);white-space:nowrap}\
     tr.net th,tr.net td{border-top:2px solid var(--fg)}\
     tr.gap td{border-bottom:none;padding:0.5rem}\
@@ -301,6 +308,20 @@ mod tests {
         let db = with_checks(&[day(2026, 1, 2), day(2026, 1, 16)]);
         let page = page(&snapshot(&db, day(2026, 1, 16)));
         assert!(page.contains("<tr><th>Medicare</th><td class=\"n\"></td><td class=\"n\"></td><td class=\"n\">0.00</td></tr>"), "{page}");
+    }
+
+    /// A year runs to ~26 look-alike columns of figures, so every other
+    /// paycheck is shaded to keep the eye on one down the page. The label is
+    /// the first cell and YTD the last, so neither is a paycheck.
+    #[test]
+    fn every_other_paycheck_column_is_shaded_but_not_ytd() {
+        let page = page(&snapshot(&with_checks(&[day(2026, 1, 2)]), day(2026, 1, 2)));
+        assert!(
+            page.contains("tr>:nth-child(even):not(:last-child){background:var(--band)}"),
+            "{page}"
+        );
+        assert!(page.contains("--band:#f2f3f5"), "no light band");
+        assert!(page.contains("--band:#1e2126"), "no dark band");
     }
 
     #[test]

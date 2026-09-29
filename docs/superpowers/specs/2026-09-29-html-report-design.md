@@ -35,8 +35,8 @@ dir = "~/Dropbox/pay"   # required
   `--dir` overrides the config and makes the `[report]` section optional; with neither, it is an
   error telling the user to add one or pass `--dir`. A failure is an error exit.
 - After `tui::run` returns and the terminal is restored, `main` calls
-  `report::write_if_enabled`. A failure prints `report: <error>` to stderr and the run still
-  exits 0. A written page prints nothing. A run given `--db` or `--today` skips it
+  `report::write_if_enabled`. A failure prints `report failed: <error>` to stderr and the run
+  still exits 0. A written page prints `wrote <size> to <path>`, sized by `report::human_bytes`. A run given `--db` or `--today` skips it
   (`Outcome::Skipped`): it is a scratch session, and the configured page is the real database's.
 - `--db`, `--today` and `--config` (the config file path, for testing and scratch runs) are global
   and apply to both.

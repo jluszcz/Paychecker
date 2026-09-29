@@ -31,8 +31,8 @@ one tab per year. The page opens on the current year, or the newest year that ha
 It carries no script and loads nothing, so it reads on a phone offline. Pointing `dir` at a
 synced folder puts it there.
 
-The write happens after the screen is torn down. A failure prints to stderr and does not fail
-the run. A run given `--db` or `--today` writes nothing on quit: it is a scratch session, and the
+The write happens after the screen is torn down, and prints `wrote 2 KiB to <dir>/Paychecks.html`.
+A quit that writes nothing prints nothing. A failure prints to stderr and does not fail the run. A run given `--db` or `--today` writes nothing on quit: it is a scratch session, and the
 configured page belongs to the real database. The file is written beside its name and renamed into place, so a sync client never
 uploads half a page.
 

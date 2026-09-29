@@ -58,8 +58,11 @@ fn main() -> Result<()> {
             let db = tui::run(db, today)?;
             // The session's work is already saved, so a report that cannot be
             // written is a warning, not a failed run.
-            if let Err(e) = report::write_if_enabled(&db, &cfg, today, scratch) {
-                eprintln!("report: {e:#}");
+            match report::write_if_enabled(&db, &cfg, today, scratch) {
+                Ok(report::Outcome::Written(written)) => print_written(&written),
+                // Silent: nothing happened, and this runs after every quit.
+                Ok(_) => {}
+                Err(e) => eprintln!("report failed: {e:#}"),
             }
         }
         Some(Command::Report { dir }) => {
@@ -78,9 +81,16 @@ fn main() -> Result<()> {
                     })?
                     .dir()?,
             };
-            let written = report::write(&db, &dir, today)?;
-            println!("wrote {} ({} bytes)", written.path.display(), written.bytes);
+            print_written(&report::write(&db, &dir, today)?);
         }
     }
     Ok(())
+}
+
+fn print_written(written: &report::Written) {
+    println!(
+        "wrote {} to {}",
+        report::human_bytes(written.bytes),
+        written.path.display()
+    );
 }

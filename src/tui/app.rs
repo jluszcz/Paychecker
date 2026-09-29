@@ -167,7 +167,10 @@ impl App {
 
     fn sheet_key(&mut self, key: KeyEvent) -> Result<()> {
         let last = self.year_paychecks().len().saturating_sub(1);
+        let shift = key.modifiers.contains(KeyModifiers::SHIFT);
         match key.code {
+            KeyCode::Left if shift => self.sheet.page(false, last),
+            KeyCode::Right if shift => self.sheet.page(true, last),
             KeyCode::Left => self.sheet.selected = self.sheet.selected.saturating_sub(1),
             KeyCode::Right => self.sheet.selected = (self.sheet.selected + 1).min(last),
             KeyCode::Up => self.sheet.row_scroll = self.sheet.row_scroll.saturating_sub(1),
@@ -515,6 +518,30 @@ mod tests {
         assert_eq!(app.sheet.selected, 1);
         press(&mut app, KeyCode::Home);
         assert_eq!(app.sheet.selected, 0);
+    }
+
+    #[test]
+    fn shift_arrows_jump_a_screen_of_paychecks() {
+        let dates: Vec<NaiveDate> = (0..12)
+            .map(|i| day(2026, 1, 2) + chrono::Days::new(14 * i))
+            .collect();
+        let checks: Vec<_> = dates.iter().map(|&d| (d, STUB)).collect();
+        let mut app = app_with(&checks, day(2026, 6, 10));
+        // At 80 wide, four paycheck columns fit.
+        screen(&mut app, 80, 30);
+        app.on_key(shift(KeyCode::Left));
+        assert_eq!(app.sheet.selected, 7);
+        let header = inside(&screen(&mut app, 80, 30))[0].clone();
+        assert!(header.contains("02-27") && header.contains("◀ 04-10 ▶"));
+        assert!(!header.contains("04-24"));
+        app.on_key(shift(KeyCode::Left));
+        app.on_key(shift(KeyCode::Left));
+        assert_eq!(app.sheet.selected, 0);
+        app.on_key(shift(KeyCode::Right));
+        assert_eq!(app.sheet.selected, 4);
+        app.on_key(shift(KeyCode::Right));
+        app.on_key(shift(KeyCode::Right));
+        assert_eq!(app.sheet.selected, 11);
     }
 
     #[test]

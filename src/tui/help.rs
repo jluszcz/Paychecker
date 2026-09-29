@@ -33,6 +33,11 @@ pub(super) const SHEET: &[Entry] = &[
         Some("paycheck"),
         "Select the previous or next paycheck",
     ),
+    entry(
+        "⇧←→",
+        Some("page"),
+        "Jump a screen of paychecks back or ahead",
+    ),
     entry("Home/End", None, "Select the first or last paycheck"),
     entry("↑/↓", None, "Scroll the rows when they do not fit"),
     entry("[ ]", Some("year"), "Show the previous or next year"),
@@ -51,11 +56,7 @@ pub(super) const SHEET: &[Entry] = &[
 
 pub(super) const FIELDS: &[Entry] = &[
     entry("↑/↓", None, "Select a field"),
-    entry(
-        "Shift-↑/↓",
-        Some("move"),
-        "Move the selected field up or down",
-    ),
+    entry("⇧↑↓", Some("move"), "Move the selected field up or down"),
     entry("a", Some("add"), "Add a field at the end"),
     entry(
         "e",
@@ -75,11 +76,11 @@ pub(super) const FIELDS: &[Entry] = &[
 ];
 
 pub(super) const PAYCHECK_FORM: &[Entry] = &[
-    entry("Tab", Some("next"), "Next field; Shift-Tab goes back"),
+    entry("Tab", Some("next"), "Next field; ⇧Tab goes back"),
     entry(
         "←/→",
         None,
-        "Date: a day, or a week with Shift. Amount: move the caret",
+        "Date: a day, or a week with ⇧. Amount: move the caret",
     ),
     entry("[ ]", None, "Date: a month"),
     entry("Ctrl+U", None, "Clear to the start of the field"),
@@ -163,7 +164,7 @@ mod tests {
     fn the_footer_joins_the_keys_that_have_a_word() {
         assert_eq!(
             footer(&[SHEET, GLOBAL]),
-            "←/→ paycheck  [ ] year  a add  e edit  d delete  1 sheet  2 fields  ? help  q quit"
+            "←/→ paycheck  ⇧←→ page  [ ] year  a add  e edit  d delete  1 sheet  2 fields  ? help  q quit"
         );
     }
 

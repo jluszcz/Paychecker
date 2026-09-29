@@ -2,6 +2,7 @@
 
 mod field;
 mod migration;
+mod paycheck;
 
 use crate::money::Cents;
 use anyhow::{Context, Result};

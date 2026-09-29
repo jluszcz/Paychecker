@@ -4,4 +4,8 @@
 // to `run`.
 #![allow(dead_code)]
 
+mod form;
 mod text;
+
+#[cfg(test)]
+mod test_support;

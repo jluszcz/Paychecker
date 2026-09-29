@@ -1,0 +1,582 @@
+//! The modal forms: a paycheck's date and amounts, and a field's name and kind.
+
+use super::text::{TextBuffer, edit_key, is_bare};
+use crate::calc::{self, Totals};
+use crate::db::{Field, FieldId, Kind, Paycheck, PaycheckId};
+use crate::money::Cents;
+use anyhow::{Context, Result, anyhow};
+use chrono::{Datelike, Months, NaiveDate, TimeDelta};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+/// `YYYY-MM-DD`, or MisterManager's `M/D` shorthand.
+pub(super) fn parse_date(raw: &str, today: NaiveDate) -> Result<NaiveDate> {
+    let raw = raw.trim();
+    if raw.contains('/') {
+        return parse_shorthand(raw, today);
+    }
+    NaiveDate::parse_from_str(raw, "%Y-%m-%d")
+        .with_context(|| format!("not a YYYY-MM-DD or M/D date: {raw:?}"))
+}
+
+/// `M/D` -- a month and a day, taking the next year that month occurs in.
+///
+/// The year turns on the month alone: `1/2` typed on January 20th is this
+/// January, a backdated entry, while `1/2` typed in December is next year's.
+fn parse_shorthand(raw: &str, today: NaiveDate) -> Result<NaiveDate> {
+    let malformed = || anyhow!("not a M/D date: {raw:?}");
+    let (month, day) = raw.split_once('/').ok_or_else(malformed)?;
+    let month: u32 = month.trim().parse().map_err(|_| malformed())?;
+    let day: u32 = day.trim().parse().map_err(|_| malformed())?;
+    let year = if month >= today.month() {
+        today.year()
+    } else {
+        today.year() + 1
+    };
+    NaiveDate::from_ymd_opt(year, month, day).ok_or_else(|| anyhow!("no such date: {raw:?}"))
+}
+
+pub(super) fn iso(date: NaiveDate) -> String {
+    date.format("%Y-%m-%d").to_string()
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(super) enum Step {
+    Days(i64),
+    /// A month's step clamps the day to the end of a shorter month.
+    Months(i32),
+}
+
+pub(super) fn step_date(date: NaiveDate, step: Step) -> Option<NaiveDate> {
+    match step {
+        Step::Days(n) => date.checked_add_signed(TimeDelta::days(n)),
+        Step::Months(n) if n >= 0 => date.checked_add_months(Months::new(n.unsigned_abs())),
+        Step::Months(n) => date.checked_sub_months(Months::new(n.unsigned_abs())),
+    }
+}
+
+/// The date keys: `←`/`→` a day, with `Shift` a week, and `[`/`]` a month.
+fn date_step(key: KeyEvent) -> Option<Step> {
+    if !is_bare(key) {
+        return None;
+    }
+    let week = key.modifiers.contains(KeyModifiers::SHIFT);
+    match key.code {
+        KeyCode::Left => Some(Step::Days(if week { -7 } else { -1 })),
+        KeyCode::Right => Some(Step::Days(if week { 7 } else { 1 })),
+        KeyCode::Char('[') => Some(Step::Months(-1)),
+        KeyCode::Char(']') => Some(Step::Months(1)),
+        _ => None,
+    }
+}
+
+/// A blank amount is zero.
+fn parse_amount(raw: &str) -> Result<Cents> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Ok(Cents::ZERO);
+    }
+    Ok(raw.parse::<Cents>()?)
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(super) enum Outcome {
+    Continue,
+    Submit,
+    Cancel,
+}
+
+pub(super) struct AmountInput {
+    pub(super) field_id: FieldId,
+    pub(super) name: String,
+    pub(super) kind: Kind,
+    pub(super) text: TextBuffer,
+}
+
+impl AmountInput {
+    fn new(field: &Field, cents: Option<Cents>) -> Self {
+        Self {
+            field_id: field.id,
+            name: field.name.clone(),
+            kind: field.kind,
+            text: cents.map_or_else(TextBuffer::default, |c| TextBuffer::from(c.to_string())),
+        }
+    }
+}
+
+pub(super) struct PaycheckForm {
+    pub(super) editing: Option<PaycheckId>,
+    pub(super) date: TextBuffer,
+    pub(super) amounts: Vec<AmountInput>,
+    /// `0` is the date; `n` is `amounts[n - 1]`.
+    pub(super) focus: usize,
+    today: NaiveDate,
+}
+
+impl PaycheckForm {
+    /// The active fields, prefilled from `latest`, dated two weeks after it.
+    pub(super) fn add(fields: &[Field], latest: Option<&Paycheck>, today: NaiveDate) -> Self {
+        let date = latest
+            .and_then(|p| step_date(p.date, Step::Days(14)))
+            .unwrap_or(today);
+        let mut shown: Vec<&Field> = fields.iter().filter(|f| !f.archived).collect();
+        calc::sort_rows(&mut shown);
+        let amounts = shown
+            .into_iter()
+            .map(|f| AmountInput::new(f, latest.and_then(|p| p.amounts.get(&f.id).copied())))
+            .collect();
+        Self {
+            editing: None,
+            date: TextBuffer::from(iso(date)),
+            amounts,
+            focus: 0,
+            today,
+        }
+    }
+
+    /// The paycheck's own fields, archived ones included, plus any active
+    /// field it lacks.
+    pub(super) fn edit(fields: &[Field], paycheck: &Paycheck, today: NaiveDate) -> Self {
+        let mut shown: Vec<&Field> = fields
+            .iter()
+            .filter(|f| !f.archived || paycheck.amounts.contains_key(&f.id))
+            .collect();
+        calc::sort_rows(&mut shown);
+        let amounts = shown
+            .into_iter()
+            .map(|f| AmountInput::new(f, paycheck.amounts.get(&f.id).copied()))
+            .collect();
+        Self {
+            editing: Some(paycheck.id),
+            date: TextBuffer::from(iso(paycheck.date)),
+            amounts,
+            focus: 0,
+            today,
+        }
+    }
+
+    pub(super) fn on_key(&mut self, key: KeyEvent) -> Outcome {
+        match key.code {
+            KeyCode::Esc => return Outcome::Cancel,
+            KeyCode::Enter => {
+                self.normalize_date();
+                return Outcome::Submit;
+            }
+            KeyCode::Tab => {
+                self.move_focus(1);
+                return Outcome::Continue;
+            }
+            KeyCode::BackTab => {
+                self.move_focus(-1);
+                return Outcome::Continue;
+            }
+            _ => {}
+        }
+        if self.focus == 0 {
+            match date_step(key) {
+                Some(step) => self.step(step),
+                None => {
+                    edit_key(&mut self.date, key);
+                }
+            }
+        } else {
+            let text = &mut self.amounts[self.focus - 1].text;
+            match key.code {
+                KeyCode::Left if is_bare(key) => text.step(-1),
+                KeyCode::Right if is_bare(key) => text.step(1),
+                _ => {
+                    edit_key(text, key);
+                }
+            }
+        }
+        Outcome::Continue
+    }
+
+    /// Net and income over the typed amounts, or `None` while any fails to parse.
+    pub(super) fn totals(&self) -> Option<Totals> {
+        let amounts: Option<Vec<(Kind, Cents)>> = self
+            .amounts
+            .iter()
+            .map(|a| parse_amount(a.text.value()).ok().map(|c| (a.kind, c)))
+            .collect();
+        amounts.map(calc::totals)
+    }
+
+    /// The date and one amount per field shown, ready to save.
+    pub(super) fn parsed(&self) -> Result<(NaiveDate, Vec<(FieldId, Cents)>)> {
+        let date = parse_date(self.date.value(), self.today)?;
+        let amounts = self
+            .amounts
+            .iter()
+            .map(|a| {
+                let cents = parse_amount(a.text.value()).with_context(|| a.name.clone())?;
+                Ok((a.field_id, cents))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok((date, amounts))
+    }
+
+    fn step(&mut self, step: Step) {
+        if let Ok(date) = parse_date(self.date.value(), self.today)
+            && let Some(next) = step_date(date, step)
+        {
+            self.date.set(iso(next));
+        }
+    }
+
+    fn move_focus(&mut self, by: isize) {
+        if self.focus == 0 {
+            self.normalize_date();
+        }
+        let stops = (self.amounts.len() + 1) as isize;
+        self.focus = (self.focus as isize + by).rem_euclid(stops) as usize;
+    }
+
+    /// Show the date in ISO form once it parses; leave text that does not.
+    fn normalize_date(&mut self) {
+        if let Ok(date) = parse_date(self.date.value(), self.today) {
+            self.date.set(iso(date));
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(super) enum FieldFocus {
+    Name,
+    Kind,
+}
+
+pub(super) struct FieldForm {
+    pub(super) editing: Option<FieldId>,
+    pub(super) name: TextBuffer,
+    pub(super) kind: Kind,
+    pub(super) focus: FieldFocus,
+}
+
+impl FieldForm {
+    pub(super) fn add() -> Self {
+        Self {
+            editing: None,
+            name: TextBuffer::default(),
+            kind: Kind::Deduction,
+            focus: FieldFocus::Name,
+        }
+    }
+
+    pub(super) fn edit(field: &Field) -> Self {
+        Self {
+            editing: Some(field.id),
+            name: TextBuffer::from(field.name.as_str()),
+            kind: field.kind,
+            focus: FieldFocus::Name,
+        }
+    }
+
+    pub(super) fn on_key(&mut self, key: KeyEvent) -> Outcome {
+        match key.code {
+            KeyCode::Esc => return Outcome::Cancel,
+            KeyCode::Enter => return Outcome::Submit,
+            KeyCode::Tab | KeyCode::BackTab => {
+                self.focus = match self.focus {
+                    FieldFocus::Name => FieldFocus::Kind,
+                    FieldFocus::Kind => FieldFocus::Name,
+                };
+                return Outcome::Continue;
+            }
+            _ => {}
+        }
+        match self.focus {
+            FieldFocus::Name => match key.code {
+                KeyCode::Left if is_bare(key) => self.name.step(-1),
+                KeyCode::Right if is_bare(key) => self.name.step(1),
+                _ => {
+                    edit_key(&mut self.name, key);
+                }
+            },
+            FieldFocus::Kind => {
+                if matches!(key.code, KeyCode::Left | KeyCode::Right) && is_bare(key) {
+                    self.kind = self.kind.other();
+                }
+            }
+        }
+        Outcome::Continue
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db;
+    use crate::tui::test_support::{STUB, ctrl, day, key, paycheck, shift};
+
+    fn today() -> NaiveDate {
+        day(2026, 1, 20)
+    }
+
+    fn fields() -> Vec<Field> {
+        db::open_in_memory().unwrap().fields().unwrap()
+    }
+
+    fn latest(fields: &[Field]) -> Paycheck {
+        paycheck(1, day(2026, 1, 16), fields, STUB)
+    }
+
+    fn type_into(form: &mut PaycheckForm, text: &str) {
+        for c in text.chars() {
+            form.on_key(key(KeyCode::Char(c)));
+        }
+    }
+
+    fn amount<'a>(form: &'a PaycheckForm, name: &str) -> &'a str {
+        form.amounts
+            .iter()
+            .find(|a| a.name == name)
+            .unwrap()
+            .text
+            .value()
+    }
+
+    #[test]
+    fn an_iso_date_parses() {
+        assert_eq!(
+            parse_date(" 2026-01-16 ", today()).unwrap(),
+            day(2026, 1, 16)
+        );
+    }
+
+    #[test]
+    fn m_d_shorthand_takes_this_year_when_the_month_is_not_behind() {
+        assert_eq!(parse_date("1/30", today()).unwrap(), day(2026, 1, 30));
+        assert_eq!(parse_date("1/2", today()).unwrap(), day(2026, 1, 2));
+        assert_eq!(parse_date("3/1", today()).unwrap(), day(2026, 3, 1));
+    }
+
+    #[test]
+    fn m_d_typed_in_late_december_for_january_is_next_year() {
+        assert_eq!(
+            parse_date("1/2", day(2026, 12, 30)).unwrap(),
+            day(2027, 1, 2)
+        );
+    }
+
+    #[test]
+    fn text_that_is_not_a_date_is_refused() {
+        for bad in ["", "soon", "13/1", "2/30", "2026-02-30", "2026/01/16"] {
+            assert!(parse_date(bad, today()).is_err(), "{bad:?} parsed");
+        }
+    }
+
+    #[test]
+    fn stepping_a_month_clamps_the_day() {
+        assert_eq!(
+            step_date(day(2026, 1, 31), Step::Months(1)),
+            Some(day(2026, 2, 28))
+        );
+        assert_eq!(
+            step_date(day(2026, 3, 31), Step::Months(-1)),
+            Some(day(2026, 2, 28))
+        );
+    }
+
+    #[test]
+    fn adding_prefills_the_date_fourteen_days_after_the_latest_paycheck() {
+        let fields = fields();
+        let form = PaycheckForm::add(&fields, Some(&latest(&fields)), today());
+        assert_eq!(form.date.value(), "2026-01-30");
+        assert_eq!(form.focus, 0);
+        assert_eq!(form.editing, None);
+    }
+
+    #[test]
+    fn adding_with_no_paychecks_uses_today_and_blank_amounts() {
+        let form = PaycheckForm::add(&fields(), None, today());
+        assert_eq!(form.date.value(), "2026-01-20");
+        assert_eq!(form.amounts.len(), 10);
+        assert!(form.amounts.iter().all(|a| a.text.value().is_empty()));
+    }
+
+    #[test]
+    fn adding_prefills_active_fields_from_the_latest_paycheck_and_leaves_the_rest_blank() {
+        let mut fields = fields();
+        let latest = paycheck(
+            1,
+            day(2026, 1, 16),
+            &fields,
+            &[("Salary", 400_000), ("HSA", 10_000)],
+        );
+        fields
+            .iter_mut()
+            .find(|f| f.name == "HSA")
+            .unwrap()
+            .archived = true;
+        let form = PaycheckForm::add(&fields, Some(&latest), today());
+        assert_eq!(amount(&form, "Salary"), "4,000.00");
+        assert_eq!(amount(&form, "State Tax"), "");
+        assert!(form.amounts.iter().all(|a| a.name != "HSA"));
+        let salary = &form.amounts[0].text;
+        assert_eq!(salary.caret(), salary.len());
+    }
+
+    #[test]
+    fn editing_shows_an_archived_field_the_paycheck_used_and_active_fields_it_lacks() {
+        let mut fields = fields();
+        let check = paycheck(
+            7,
+            day(2026, 1, 16),
+            &fields,
+            &[("Salary", 400_000), ("HSA", 10_000)],
+        );
+        fields
+            .iter_mut()
+            .find(|f| f.name == "HSA")
+            .unwrap()
+            .archived = true;
+        let form = PaycheckForm::edit(&fields, &check, today());
+        assert_eq!(form.editing, Some(7));
+        assert_eq!(form.date.value(), "2026-01-16");
+        assert_eq!(amount(&form, "HSA"), "100.00");
+        assert_eq!(amount(&form, "Medicare"), "");
+        assert_eq!(form.amounts[0].name, "Salary");
+        assert_eq!(form.amounts.len(), 10);
+    }
+
+    #[test]
+    fn tab_and_shift_tab_wrap_at_both_ends() {
+        let mut form = PaycheckForm::add(&fields(), None, today());
+        form.on_key(key(KeyCode::BackTab));
+        assert_eq!(form.focus, 10);
+        form.on_key(key(KeyCode::Tab));
+        assert_eq!(form.focus, 0);
+        form.on_key(key(KeyCode::Tab));
+        assert_eq!(form.focus, 1);
+    }
+
+    #[test]
+    fn arrows_step_the_date_a_day_and_shift_arrows_a_week() {
+        let mut form = PaycheckForm::add(&fields(), None, today());
+        form.on_key(key(KeyCode::Right));
+        assert_eq!(form.date.value(), "2026-01-21");
+        form.on_key(shift(KeyCode::Left));
+        assert_eq!(form.date.value(), "2026-01-14");
+    }
+
+    #[test]
+    fn brackets_step_the_date_a_month() {
+        let mut form = PaycheckForm::add(&fields(), None, today());
+        form.on_key(key(KeyCode::Char(']')));
+        assert_eq!(form.date.value(), "2026-02-20");
+        form.on_key(key(KeyCode::Char('[')));
+        form.on_key(key(KeyCode::Char('[')));
+        assert_eq!(form.date.value(), "2025-12-20");
+    }
+
+    #[test]
+    fn stepping_does_nothing_while_the_date_is_blank_or_invalid() {
+        let mut form = PaycheckForm::add(&fields(), None, today());
+        form.on_key(ctrl('u'));
+        form.on_key(key(KeyCode::Right));
+        assert_eq!(form.date.value(), "");
+        type_into(&mut form, "x");
+        form.on_key(key(KeyCode::Char(']')));
+        assert_eq!(form.date.value(), "x");
+    }
+
+    #[test]
+    fn leaving_the_date_shows_it_in_iso_form() {
+        let mut form = PaycheckForm::add(&fields(), None, today());
+        form.on_key(ctrl('u'));
+        type_into(&mut form, "2/13");
+        assert_eq!(form.date.value(), "2/13");
+        form.on_key(key(KeyCode::Tab));
+        assert_eq!(form.date.value(), "2026-02-13");
+    }
+
+    #[test]
+    fn leaving_an_invalid_date_keeps_the_raw_text() {
+        let mut form = PaycheckForm::add(&fields(), None, today());
+        form.on_key(ctrl('u'));
+        type_into(&mut form, "2/30");
+        form.on_key(key(KeyCode::Tab));
+        assert_eq!(form.date.value(), "2/30");
+    }
+
+    #[test]
+    fn arrows_move_the_caret_in_an_amount() {
+        let fields = fields();
+        let mut form = PaycheckForm::add(&fields, Some(&latest(&fields)), today());
+        form.on_key(key(KeyCode::Tab));
+        form.on_key(key(KeyCode::Left));
+        form.on_key(key(KeyCode::Left));
+        type_into(&mut form, "5");
+        assert_eq!(amount(&form, "Salary"), "4,000.500");
+    }
+
+    #[test]
+    fn a_blank_amount_saves_as_zero() {
+        let form = PaycheckForm::add(&fields(), None, today());
+        let (date, amounts) = form.parsed().unwrap();
+        assert_eq!(date, today());
+        assert_eq!(amounts.len(), 10);
+        assert!(amounts.iter().all(|&(_, c)| c == Cents::ZERO));
+    }
+
+    #[test]
+    fn a_bad_amount_is_reported_with_its_field_name() {
+        let mut form = PaycheckForm::add(&fields(), None, today());
+        form.on_key(key(KeyCode::Tab));
+        type_into(&mut form, "abc");
+        let err = form.parsed().unwrap_err();
+        assert_eq!(format!("{err:#}"), "Salary: not a monetary amount: \"abc\"");
+    }
+
+    #[test]
+    fn the_live_totals_follow_the_input_and_vanish_on_a_bad_amount() {
+        let fields = fields();
+        let mut form = PaycheckForm::add(&fields, Some(&latest(&fields)), today());
+        assert_eq!(
+            form.totals(),
+            Some(Totals {
+                income: Cents(400_000),
+                net: Cents(309_400)
+            })
+        );
+        form.on_key(key(KeyCode::Tab));
+        type_into(&mut form, "x");
+        assert_eq!(form.totals(), None);
+    }
+
+    #[test]
+    fn escape_cancels_and_enter_submits() {
+        let mut form = PaycheckForm::add(&fields(), None, today());
+        assert_eq!(form.on_key(key(KeyCode::Char('1'))), Outcome::Continue);
+        assert_eq!(form.on_key(key(KeyCode::Enter)), Outcome::Submit);
+        assert_eq!(form.on_key(key(KeyCode::Esc)), Outcome::Cancel);
+    }
+
+    #[test]
+    fn a_field_form_defaults_to_a_deduction_and_arrows_cycle_the_kind() {
+        let mut form = FieldForm::add();
+        assert_eq!((form.kind, form.focus), (Kind::Deduction, FieldFocus::Name));
+        form.on_key(key(KeyCode::Tab));
+        assert_eq!(form.focus, FieldFocus::Kind);
+        form.on_key(key(KeyCode::Left));
+        assert_eq!(form.kind, Kind::Income);
+        form.on_key(key(KeyCode::Right));
+        assert_eq!(form.kind, Kind::Deduction);
+        form.on_key(key(KeyCode::BackTab));
+        assert_eq!(form.focus, FieldFocus::Name);
+    }
+
+    #[test]
+    fn a_field_form_types_into_the_name_and_arrows_move_its_caret() {
+        let fields = fields();
+        let mut form = FieldForm::edit(&fields[7]);
+        assert_eq!(
+            (form.editing, form.name.value()),
+            (Some(fields[7].id), "HSA")
+        );
+        form.on_key(key(KeyCode::Left));
+        form.on_key(key(KeyCode::Char('x')));
+        assert_eq!(form.name.value(), "HSxA");
+        assert_eq!(form.on_key(key(KeyCode::Enter)), Outcome::Submit);
+    }
+}

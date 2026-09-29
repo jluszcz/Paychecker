@@ -81,6 +81,8 @@ Federal Tax, Social Security, Medicare, State Tax, Family Leave, Medical Leave, 
   calendar year: the YTD % is the ratio of the sums, not an average of per-paycheck percentages.
 - **Row visibility** for a year: a field has a row if it is active, or if any paycheck in that
   year has an amount for it. Archived fields therefore appear only in years they applied to.
+- **Missing amounts.** A paycheck with no amount for a visible field shows a blank cell there, and
+  counts it as 0 in its percentages and in YTD.
 
 ## Architecture
 

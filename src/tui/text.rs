@@ -42,10 +42,6 @@ impl TextBuffer {
         self.caret = self.len();
     }
 
-    pub(super) fn clear(&mut self) {
-        self.set("");
-    }
-
     pub(super) fn insert(&mut self, c: char) {
         let at = self.byte(self.caret);
         self.value.insert(at, c);

@@ -360,6 +360,36 @@ pub(super) fn render_paycheck(frame: &mut Frame, area: Rect, form: &PaycheckForm
     ));
 }
 
+pub(super) fn render_field(frame: &mut Frame, area: Rect, form: &FieldForm) {
+    let marker = |focus| if form.focus == focus { "›" } else { " " };
+    let lines = vec![
+        Line::from(format!(
+            "{} Name  {}",
+            marker(FieldFocus::Name),
+            form.name.value()
+        )),
+        Line::from(format!(
+            "{} Kind  ◀ {} ▶",
+            marker(FieldFocus::Kind),
+            form.kind.label()
+        )),
+    ];
+    let title = if form.editing.is_some() {
+        " Edit field "
+    } else {
+        " Add field "
+    };
+    let popup = centered(area, 40, 4);
+    frame.render_widget(Clear, popup);
+    frame.render_widget(
+        Paragraph::new(lines).block(Block::bordered().title(title)),
+        popup,
+    );
+    if form.focus == FieldFocus::Name {
+        frame.set_cursor_position((popup.x + 1 + 8 + form.name.caret() as u16, popup.y + 1));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,16 +1,16 @@
 //! `App`: which screen is showing, the status line, and where each key goes.
 
 use super::fields::{self, FieldsView};
-use super::form::{self, Outcome, PaycheckForm};
+use super::form::{self, FieldForm, Outcome, PaycheckForm};
 use super::help::{self, Entry};
 use super::sheet::{self, SheetView};
 use super::text::is_bare;
 use crate::calc;
-use crate::db::{Db, Field, Paycheck, PaycheckId};
+use crate::db::{Db, Field, FieldId, Paycheck, PaycheckId};
 use anyhow::Result;
 use chrono::{Datelike, NaiveDate};
 use ratatui::Frame;
-use ratatui::crossterm::event::{KeyCode, KeyEvent};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Color, Style};
 use ratatui::widgets::Paragraph;
@@ -28,6 +28,8 @@ pub(super) enum Modal {
     Paycheck(PaycheckForm),
     /// Waiting for `y`; the question is on the status line.
     DeletePaycheck(PaycheckId),
+    Field(FieldForm),
+    DeleteField(FieldId),
 }
 
 #[derive(Debug)]
@@ -219,6 +221,32 @@ impl App {
                     }
                 }
             }
+            Modal::Field(mut form) => match form.on_key(key) {
+                Outcome::Continue => self.modal = Some(Modal::Field(form)),
+                Outcome::Cancel => {}
+                Outcome::Submit => {
+                    if let Err(e) = self.save_field(&form) {
+                        self.modal = Some(Modal::Field(form));
+                        return Err(e);
+                    }
+                }
+            },
+            Modal::DeleteField(id) => {
+                if is_yes(key) {
+                    let name = self
+                        .fields
+                        .iter()
+                        .find(|f| f.id == id)
+                        .map(|f| f.name.clone());
+                    self.db.delete_field(id)?;
+                    self.reload()?;
+                    let last = self.fields.len().saturating_sub(1);
+                    self.fields_view.selected = self.fields_view.selected.min(last);
+                    if let Some(name) = name {
+                        self.info(format!("Deleted {name}"));
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -245,11 +273,72 @@ impl App {
 
     fn fields_key(&mut self, key: KeyEvent) -> Result<()> {
         let last = self.fields.len().saturating_sub(1);
+        let shift = key.modifiers.contains(KeyModifiers::SHIFT);
         match key.code {
+            KeyCode::Up if shift => self.move_field(true)?,
+            KeyCode::Down if shift => self.move_field(false)?,
             KeyCode::Up => self.fields_view.selected = self.fields_view.selected.saturating_sub(1),
             KeyCode::Down => self.fields_view.selected = (self.fields_view.selected + 1).min(last),
+            KeyCode::Char('a') => self.modal = Some(Modal::Field(FieldForm::add())),
+            KeyCode::Char('e') => {
+                if let Some(f) = self.selected_field() {
+                    let form = FieldForm::edit(f);
+                    self.modal = Some(Modal::Field(form));
+                }
+            }
+            KeyCode::Char('x') => {
+                if let Some(f) = self.selected_field() {
+                    let (id, archived, name) = (f.id, f.archived, f.name.clone());
+                    self.db.set_archived(id, !archived)?;
+                    self.reload()?;
+                    let verb = if archived { "Unarchived" } else { "Archived" };
+                    self.info(format!("{verb} {name}"));
+                }
+            }
+            KeyCode::Char('d') => {
+                if let Some(f) = self.selected_field() {
+                    let (id, name) = (f.id, f.name.clone());
+                    self.db.ensure_deletable(id)?;
+                    self.modal = Some(Modal::DeleteField(id));
+                    self.info(format!("Delete {name}? y to confirm"));
+                }
+            }
             _ => {}
         }
+        Ok(())
+    }
+
+    fn selected_field(&self) -> Option<&Field> {
+        self.fields.get(self.fields_view.selected)
+    }
+
+    fn select_field(&mut self, id: FieldId) {
+        if let Some(i) = self.fields.iter().position(|f| f.id == id) {
+            self.fields_view.selected = i;
+        }
+    }
+
+    fn move_field(&mut self, up: bool) -> Result<()> {
+        if let Some(id) = self.selected_field().map(|f| f.id) {
+            self.db.move_field(id, up)?;
+            self.reload()?;
+            self.select_field(id);
+        }
+        Ok(())
+    }
+
+    fn save_field(&mut self, form: &FieldForm) -> Result<()> {
+        let id = match form.editing {
+            None => self.db.insert_field(form.name.value(), form.kind)?,
+            Some(id) => {
+                self.db.update_field(id, form.name.value(), form.kind)?;
+                id
+            }
+        };
+        self.reload()?;
+        self.select_field(id);
+        let name = self.fields[self.fields_view.selected].name.clone();
+        self.info(format!("Saved {name}"));
         Ok(())
     }
 
@@ -290,8 +379,10 @@ impl App {
             }
             Screen::Fields => fields::render(frame, body, &self.fields_view, &self.fields),
         }
-        if let Some(Modal::Paycheck(form)) = &self.modal {
-            form::render_paycheck(frame, body, form);
+        match &self.modal {
+            Some(Modal::Paycheck(form)) => form::render_paycheck(frame, body, form),
+            Some(Modal::Field(form)) => form::render_field(frame, body, form),
+            _ => {}
         }
         if self.help {
             help::render(frame, body, &self.help_topics());
@@ -313,7 +404,8 @@ impl App {
         }
         match (&self.modal, self.screen) {
             (Some(Modal::Paycheck(_)), _) => vec![help::PAYCHECK_FORM],
-            (Some(Modal::DeletePaycheck(_)), _) => vec![help::CONFIRM],
+            (Some(Modal::Field(_)), _) => vec![help::FIELD_FORM],
+            (Some(Modal::DeletePaycheck(_) | Modal::DeleteField(_)), _) => vec![help::CONFIRM],
             (None, Screen::Sheet) => vec![help::SHEET, help::GLOBAL],
             (None, Screen::Fields) => vec![help::FIELDS, help::GLOBAL],
         }
@@ -322,8 +414,10 @@ impl App {
     /// The open form's keys first, then the screen's, then the global keys.
     fn help_topics(&self) -> Vec<(&'static str, &'static [Entry])> {
         let mut topics = Vec::new();
-        if let Some(Modal::Paycheck(_)) = &self.modal {
-            topics.push(("Paycheck form", help::PAYCHECK_FORM));
+        match &self.modal {
+            Some(Modal::Paycheck(_)) => topics.push(("Paycheck form", help::PAYCHECK_FORM)),
+            Some(Modal::Field(_)) => topics.push(("Field form", help::FIELD_FORM)),
+            _ => {}
         }
         topics.push(match self.screen {
             Screen::Sheet => ("Sheet", help::SHEET),
@@ -341,8 +435,11 @@ fn is_yes(key: KeyEvent) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::Kind;
     use crate::money::Cents;
-    use crate::tui::test_support::{STUB, app_with, ctrl, day, key, press, screen, type_text};
+    use crate::tui::test_support::{
+        STUB, app_with, ctrl, day, key, press, screen, shift, type_text,
+    };
     use ratatui::crossterm::event::KeyCode;
 
     /// One paycheck in 2025 and two in 2026.
@@ -640,5 +737,148 @@ mod tests {
         press(&mut app, KeyCode::Esc);
         assert!(!app.help);
         assert!(app.modal.is_some());
+    }
+
+    fn names(app: &App) -> Vec<&str> {
+        app.fields.iter().map(|f| f.name.as_str()).collect()
+    }
+
+    #[test]
+    fn a_new_field_goes_at_the_end_and_into_the_next_paycheck_form() {
+        let mut app = standard();
+        press(&mut app, KeyCode::Char('2'));
+        press(&mut app, KeyCode::Char('a'));
+        assert!(screen(&mut app, 80, 30).contains("Add field"));
+        type_text(&mut app, "Bonus");
+        press(&mut app, KeyCode::Tab);
+        press(&mut app, KeyCode::Left);
+        press(&mut app, KeyCode::Enter);
+        assert!(app.modal.is_none(), "{:?}", app.status);
+        let bonus = app.fields.last().unwrap();
+        assert_eq!((bonus.name.as_str(), bonus.kind), ("Bonus", Kind::Income));
+        assert_eq!(app.fields_view.selected, 10);
+        assert_eq!(app.status.as_ref().unwrap().text, "Saved Bonus");
+        press(&mut app, KeyCode::Char('1'));
+        press(&mut app, KeyCode::Char('a'));
+        assert_eq!(paycheck_form(&app).amounts[1].name, "Bonus");
+    }
+
+    #[test]
+    fn a_duplicate_or_blank_name_keeps_the_field_form_open() {
+        let mut app = standard();
+        press(&mut app, KeyCode::Char('2'));
+        press(&mut app, KeyCode::Char('a'));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.status.as_ref().unwrap().text, "a field needs a name");
+        type_text(&mut app, "Medicare");
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(app.modal, Some(Modal::Field(_))));
+        assert_eq!(
+            app.status.as_ref().unwrap().text,
+            "a field named \"Medicare\" already exists"
+        );
+    }
+
+    #[test]
+    fn renaming_a_field_keeps_its_past_amounts() {
+        let mut app = standard();
+        press(&mut app, KeyCode::Char('2'));
+        press(&mut app, KeyCode::Char('e'));
+        app.on_key(ctrl('u'));
+        type_text(&mut app, "Base Pay");
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('1'));
+        let text = screen(&mut app, 100, 30);
+        let row = text.lines().find(|l| l.starts_with("Base Pay")).unwrap();
+        assert!(row.ends_with("8,000.00"), "{row}");
+    }
+
+    #[test]
+    fn shift_arrows_move_the_selected_field_and_keep_it_selected() {
+        let mut app = standard();
+        press(&mut app, KeyCode::Char('2'));
+        press(&mut app, KeyCode::Down);
+        app.on_key(shift(KeyCode::Down));
+        assert_eq!(names(&app)[1..3], ["Social Security", "Federal Tax"]);
+        assert_eq!(app.fields_view.selected, 2);
+        app.on_key(shift(KeyCode::Up));
+        assert_eq!(names(&app)[1], "Federal Tax");
+        assert_eq!(app.fields_view.selected, 1);
+    }
+
+    #[test]
+    fn x_archives_and_unarchives_the_selected_field() {
+        let mut app = standard();
+        press(&mut app, KeyCode::Char('2'));
+        for _ in 0..7 {
+            press(&mut app, KeyCode::Down);
+        }
+        press(&mut app, KeyCode::Char('x'));
+        assert!(app.fields[7].archived);
+        assert_eq!(app.status.as_ref().unwrap().text, "Archived HSA");
+        assert!(screen(&mut app, 80, 30).contains("archived"));
+        press(&mut app, KeyCode::Char('x'));
+        assert!(!app.fields[7].archived);
+        assert_eq!(app.status.as_ref().unwrap().text, "Unarchived HSA");
+    }
+
+    #[test]
+    fn deleting_a_used_field_says_to_archive_it_instead() {
+        let mut app = standard();
+        press(&mut app, KeyCode::Char('2'));
+        press(&mut app, KeyCode::Char('d'));
+        assert!(app.modal.is_none());
+        let status = app.status.as_ref().unwrap();
+        assert!(status.error);
+        assert_eq!(
+            status.text,
+            "Salary is used by a paycheck; archive it with x instead"
+        );
+    }
+
+    #[test]
+    fn deleting_an_unused_field_needs_y() {
+        let mut app = standard();
+        press(&mut app, KeyCode::Char('2'));
+        let last = app.fields.len() - 1;
+        app.fields_view.selected = last;
+        press(&mut app, KeyCode::Char('d'));
+        assert_eq!(
+            app.status.as_ref().unwrap().text,
+            "Delete 401K (Roth)? y to confirm"
+        );
+        press(&mut app, KeyCode::Char('y'));
+        assert_eq!(app.fields.len(), 9);
+        assert_eq!(app.fields_view.selected, 8);
+        assert_eq!(app.status.as_ref().unwrap().text, "Deleted 401K (Roth)");
+    }
+
+    #[test]
+    fn an_archived_field_shows_only_in_years_a_paycheck_used_it() {
+        let mut app = app_with(
+            &[
+                (day(2025, 12, 19), &[("Salary", 400_000), ("HSA", 10_000)]),
+                (day(2026, 1, 2), &[("Salary", 400_000)]),
+            ],
+            day(2026, 1, 20),
+        );
+        press(&mut app, KeyCode::Char('2'));
+        app.fields_view.selected = 7;
+        press(&mut app, KeyCode::Char('x'));
+        press(&mut app, KeyCode::Char('1'));
+        assert!(
+            !screen(&mut app, 100, 30)
+                .lines()
+                .any(|l| l.starts_with("HSA"))
+        );
+        press(&mut app, KeyCode::Char('a'));
+        assert!(paycheck_form(&app).amounts.iter().all(|a| a.name != "HSA"));
+        press(&mut app, KeyCode::Esc);
+        press(&mut app, KeyCode::Char('['));
+        let text = screen(&mut app, 100, 30);
+        let row = text.lines().find(|l| l.starts_with("HSA")).unwrap();
+        assert!(row.contains("100.00"), "{row}");
+        press(&mut app, KeyCode::Char('e'));
+        assert!(paycheck_form(&app).amounts.iter().any(|a| a.name == "HSA"));
     }
 }

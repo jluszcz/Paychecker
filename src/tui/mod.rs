@@ -5,6 +5,7 @@
 #![allow(dead_code)]
 
 mod form;
+mod sheet;
 mod text;
 
 #[cfg(test)]

@@ -170,6 +170,8 @@ impl App {
         match key.code {
             KeyCode::Left => self.sheet.selected = self.sheet.selected.saturating_sub(1),
             KeyCode::Right => self.sheet.selected = (self.sheet.selected + 1).min(last),
+            KeyCode::Up => self.sheet.row_scroll = self.sheet.row_scroll.saturating_sub(1),
+            KeyCode::Down => self.sheet.row_scroll += 1,
             KeyCode::Home => self.sheet.selected = 0,
             KeyCode::End => self.sheet.selected = last,
             KeyCode::Char('[') => self.show_year(self.sheet.year - 1),
@@ -880,5 +882,48 @@ mod tests {
         assert!(row.contains("100.00"), "{row}");
         press(&mut app, KeyCode::Char('e'));
         assert!(paycheck_form(&app).amounts.iter().any(|a| a.name == "HSA"));
+    }
+
+    #[test]
+    fn on_a_short_terminal_the_empty_year_hint_shows_under_the_header() {
+        let mut app = app_with(&[], day(2026, 3, 1));
+        let text = screen(&mut app, 80, 24);
+        assert!(text.lines().next().unwrap().starts_with("2026"));
+        assert!(text.contains("No paychecks in 2026. Press a to add one."));
+    }
+
+    #[test]
+    fn a_sheet_taller_than_the_terminal_scrolls_with_the_header_pinned() {
+        let mut app = standard();
+        let text = screen(&mut app, 80, 24);
+        assert!(!text.lines().any(|l| l.starts_with("Net Pay")));
+        for _ in 0..5 {
+            press(&mut app, KeyCode::Down);
+        }
+        let text = screen(&mut app, 80, 24);
+        assert!(text.lines().next().unwrap().starts_with("2026"));
+        assert!(text.lines().any(|l| l.starts_with("Net Pay")));
+        assert!(!text.lines().any(|l| l.starts_with("Salary")));
+        for _ in 0..5 {
+            press(&mut app, KeyCode::Up);
+        }
+        let text = screen(&mut app, 80, 24);
+        assert!(text.lines().nth(1).unwrap().starts_with("Salary"));
+    }
+
+    #[test]
+    fn a_paycheck_form_taller_than_the_terminal_keeps_the_focused_field_and_net_in_view() {
+        let mut app = standard();
+        for i in 0..20 {
+            app.db
+                .insert_field(&format!("Extra {i:02}"), Kind::Deduction)
+                .unwrap();
+        }
+        app.reload().unwrap();
+        press(&mut app, KeyCode::Char('a'));
+        press(&mut app, KeyCode::BackTab);
+        let text = screen(&mut app, 100, 24);
+        assert!(text.contains("› Extra 19"), "{text}");
+        assert!(text.contains("Net 3,094.00"), "{text}");
     }
 }

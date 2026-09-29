@@ -34,6 +34,7 @@ pub(super) const SHEET: &[Entry] = &[
         "Select the previous or next paycheck",
     ),
     entry("Home/End", None, "Select the first or last paycheck"),
+    entry("↑/↓", None, "Scroll the rows when they do not fit"),
     entry("[ ]", Some("year"), "Show the previous or next year"),
     entry(
         "a",

@@ -149,7 +149,8 @@ Net Pay            65.00%    65.00%    65.00%    65.00% │    65.00%
   2. A rule, then Net.
   3. A blank line, then the percentage block: every deduction field, then Net Pay.
 - Archived fields that are visible render the same as active ones.
-- A year with no paychecks shows the labels and a hint to press `a`.
+- A year with no paychecks shows a hint to press `a` under the header, then the labels.
+- The header row stays on the top line. When the rows below it do not fit, `↑`/`↓` scroll them.
 - `a` add a paycheck, `e` edit the selected one, `d` delete the selected one: the
   status line asks, `y` confirms, and any other key cancels.
 
@@ -168,6 +169,8 @@ Net Pay            65.00%    65.00%    65.00%    65.00% │    65.00%
     lacks. They are filled with its amounts, and missing ones start blank.
   - Prefilled text puts the caret at the end. `Ctrl+U` clears the field.
 - `Tab`/`Shift-Tab` move through date and amounts, wrapping at either end.
+- When the date and amounts do not all fit, they scroll inside the form to keep the focused one in
+  view, and the Net line stays visible.
 - Text editing is MisterManager's `edit_key`: `Ctrl+A/E` start and end, `Ctrl+B/F` left and
   right, `Ctrl+W` delete the previous word, `Ctrl+U/K` kill to start or end, `Ctrl+D`/`Delete`
   delete forward, `Backspace` delete back. `←`/`→` move the caret in an amount field. Other Ctrl

@@ -319,6 +319,8 @@ pub(super) fn net_line(totals: Option<Totals>) -> String {
     }
 }
 
+/// The date and amounts scroll inside the popup when they do not all fit, so
+/// the focused row and the Net line are always in view.
 pub(super) fn render_paycheck(frame: &mut Frame, area: Rect, form: &PaycheckForm) {
     let label_w = form
         .amounts
@@ -327,10 +329,24 @@ pub(super) fn render_paycheck(frame: &mut Frame, area: Rect, form: &PaycheckForm
         .max()
         .unwrap_or(0)
         .max("Date".len());
-    let rows = std::iter::once(("Date", &form.date))
-        .chain(form.amounts.iter().map(|a| (a.name.as_str(), &a.text)));
+    let rows: Vec<(&str, &TextBuffer)> = std::iter::once(("Date", &form.date))
+        .chain(form.amounts.iter().map(|a| (a.name.as_str(), &a.text)))
+        .collect();
+    let title = if form.editing.is_some() {
+        " Edit paycheck "
+    } else {
+        " Add paycheck "
+    };
+    let width = (label_w + 4 + 16).max(32) as u16 + 2;
+    // Two borders, and the blank line and Net line under the rows.
+    let popup = centered(area, width, rows.len() as u16 + 4);
+    let room = usize::from(popup.height).saturating_sub(4).max(1);
+    let offset = form.focus.saturating_sub(room - 1);
     let mut lines: Vec<Line> = rows
+        .iter()
         .enumerate()
+        .skip(offset)
+        .take(room)
         .map(|(i, (label, text))| {
             let marker = if i == form.focus { "›" } else { " " };
             Line::from(format!("{marker} {label:<label_w$}  {}", text.value()))
@@ -338,25 +354,16 @@ pub(super) fn render_paycheck(frame: &mut Frame, area: Rect, form: &PaycheckForm
         .collect();
     lines.push(Line::default());
     lines.push(Line::from(net_line(form.totals())));
-    let title = if form.editing.is_some() {
-        " Edit paycheck "
-    } else {
-        " Add paycheck "
-    };
-    let width = (label_w + 4 + 16).max(32) as u16 + 2;
-    let popup = centered(area, width, lines.len() as u16 + 2);
     frame.render_widget(Clear, popup);
     frame.render_widget(
         Paragraph::new(lines).block(Block::bordered().title(title)),
         popup,
     );
-    let caret = match form.focus {
-        0 => form.date.caret(),
-        n => form.amounts[n - 1].text.caret(),
-    };
+    let caret = rows[form.focus].1.caret();
+    let x = popup.x + 1 + (label_w + 4 + caret) as u16;
     frame.set_cursor_position((
-        popup.x + 1 + (label_w + 4 + caret) as u16,
-        popup.y + 1 + form.focus as u16,
+        x.min(popup.right().saturating_sub(2)),
+        popup.y + 1 + (form.focus - offset) as u16,
     ));
 }
 

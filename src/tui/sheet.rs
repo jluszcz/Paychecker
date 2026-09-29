@@ -18,6 +18,9 @@ pub(super) struct SheetView {
     pub(super) selected: usize,
     /// The first paycheck column drawn.
     scroll: usize,
+    /// The first row drawn below the pinned header. `render` clamps it, so
+    /// callers may step it past the end.
+    pub(super) row_scroll: usize,
 }
 
 impl SheetView {
@@ -26,12 +29,14 @@ impl SheetView {
             year,
             selected,
             scroll: 0,
+            row_scroll: 0,
         }
     }
 }
 
 /// Draw `sheet`: fixed label and YTD columns, and as many paycheck columns
-/// between them as fit, scrolled so the selected one shows.
+/// between them as fit, scrolled so the selected one shows. The header stays
+/// on the top line; the rows below it scroll when they do not fit.
 pub(super) fn render(frame: &mut Frame, area: Rect, view: &mut SheetView, sheet: &Sheet) {
     let label_w = sheet
         .rows
@@ -82,7 +87,15 @@ pub(super) fn render(frame: &mut Frame, area: Rect, view: &mut SheetView, sheet:
             }
         })
         .collect();
-    let mut lines = vec![row(&sheet.year.to_string(), header, "YTD".to_string())];
+    let header = row(&sheet.year.to_string(), header, "YTD".to_string());
+    let mut lines = Vec::new();
+    if len == 0 {
+        lines.push(Line::from(format!(
+            "No paychecks in {}. Press a to add one.",
+            sheet.year
+        )));
+        lines.push(Line::default());
+    }
     for r in &sheet.rows {
         lines.push(row(&r.name, amounts(&r.cells), r.ytd.to_string()));
     }
@@ -102,14 +115,11 @@ pub(super) fn render(frame: &mut Frame, area: Rect, view: &mut SheetView, sheet:
         let cells = r.cells[start..end].iter().map(|p| calc::show(*p)).collect();
         lines.push(row(&r.label, cells, calc::show(r.ytd)));
     }
-    if len == 0 {
-        lines.push(Line::default());
-        lines.push(Line::from(format!(
-            "No paychecks in {}. Press a to add one.",
-            sheet.year
-        )));
-    }
-    frame.render_widget(Paragraph::new(lines), area);
+    let body_rows = usize::from(area.height).saturating_sub(1);
+    view.row_scroll = view.row_scroll.min(lines.len().saturating_sub(body_rows));
+    let mut shown = vec![header];
+    shown.extend(lines.into_iter().skip(view.row_scroll));
+    frame.render_widget(Paragraph::new(shown), area);
 }
 
 #[cfg(test)]

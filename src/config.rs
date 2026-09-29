@@ -36,6 +36,17 @@ impl Report {
     }
 }
 
+impl Config {
+    #[cfg(test)]
+    pub(crate) fn reporting_to(dir: &Path) -> Config {
+        Config {
+            report: Some(Report {
+                dir: dir.display().to_string(),
+            }),
+        }
+    }
+}
+
 /// `$XDG_CONFIG_HOME/paychecker/config.toml`, or `~/.config` when it is unset
 /// or empty.
 pub fn default_path() -> Result<PathBuf> {

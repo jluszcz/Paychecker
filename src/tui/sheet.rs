@@ -4,7 +4,8 @@ use crate::calc::{self, Sheet};
 use crate::money::Cents;
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::text::Line;
+use ratatui::style::{Modifier, Style};
+use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
 /// A paycheck column's width: room for `-99,999.99` and for the selected
@@ -36,7 +37,8 @@ impl SheetView {
 
 /// Draw `sheet`: fixed label and YTD columns, and as many paycheck columns
 /// between them as fit, scrolled so the selected one shows. The header stays
-/// on the top line; the rows below it scroll when they do not fit.
+/// on the top line; the rows below it scroll when they do not fit. Column
+/// headings and row labels are bold; the year is on the border around it.
 pub(super) fn render(frame: &mut Frame, area: Rect, view: &mut SheetView, sheet: &Sheet) {
     let label_w = sheet
         .rows
@@ -60,13 +62,17 @@ pub(super) fn render(frame: &mut Frame, area: Rect, view: &mut SheetView, sheet:
     let start = view.scroll.min(len);
     let end = (start + visible).min(len);
 
+    let bold = Style::new().add_modifier(Modifier::BOLD);
     let row = |label: &str, cells: Vec<String>, ytd: String| {
-        let mut text = format!("{label:<label_w$}");
+        let mut text = String::new();
         for cell in cells {
             text.push_str(&format!(" {cell:>COL$}"));
         }
         text.push_str(&format!(" │ {ytd:>COL$}"));
-        Line::from(text)
+        Line::from(vec![
+            Span::styled(format!("{label:<label_w$}"), bold),
+            Span::raw(text),
+        ])
     };
     let amounts = |cells: &[Option<Cents>]| -> Vec<String> {
         cells[start..end]
@@ -87,7 +93,7 @@ pub(super) fn render(frame: &mut Frame, area: Rect, view: &mut SheetView, sheet:
             }
         })
         .collect();
-    let header = row(&sheet.year.to_string(), header, "YTD".to_string());
+    let header = row("", header, "YTD".to_string()).style(bold);
     let mut lines = Vec::new();
     if len == 0 {
         lines.push(Line::from(format!(
@@ -126,7 +132,7 @@ pub(super) fn render(frame: &mut Frame, area: Rect, view: &mut SheetView, sheet:
 mod tests {
     use super::*;
     use crate::db::{self, Field, Paycheck};
-    use crate::tui::test_support::{day, draw, paycheck};
+    use crate::tui::test_support::{day, draw, draw_buffer, paycheck};
 
     const PAY: &[(&str, i64)] = &[("Salary", 400_000), ("Federal Tax", 60_000)];
 
@@ -174,7 +180,7 @@ mod tests {
             lines[0],
             format!(
                 "{:<LABEL$} {:>10} {:>10} │ {:>10}",
-                "2026", "01-02", "◀ 01-16 ▶", "YTD"
+                "", "01-02", "◀ 01-16 ▶", "YTD"
             )
         );
     }
@@ -241,11 +247,29 @@ mod tests {
     }
 
     #[test]
+    fn column_headings_and_row_labels_are_bold_and_amounts_are_not() {
+        let fields = fields();
+        let mut view = SheetView::new(2026, 0);
+        let sheet = calc::sheet(2026, &fields, &checks(&fields, &[(1, 2)]));
+        let buffer = draw_buffer(80, 30, |frame| {
+            let area = frame.area();
+            render(frame, area, &mut view, &sheet)
+        });
+        let bold = |x: usize, y: u16| buffer[(x as u16, y)].modifier.contains(Modifier::BOLD);
+        let ytd = LABEL + 11 + 3 + 7;
+        assert!(bold(LABEL + 6, 0), "the date heading");
+        assert!(bold(ytd, 0), "the YTD heading");
+        assert!(bold(0, 1), "the Salary label");
+        assert!(!bold(LABEL + 6, 1), "a Salary amount");
+        assert!(!bold(ytd, 1), "Salary's YTD");
+    }
+
+    #[test]
     fn a_year_with_no_paychecks_shows_the_labels_and_a_hint() {
         let fields = fields();
         let mut view = SheetView::new(2027, 0);
         let lines = drawn(80, &mut view, &fields, &checks(&fields, &[(1, 2)]));
-        assert_eq!(lines[0], format!("{:<LABEL$} │ {:>10}", "2027", "YTD"));
+        assert_eq!(lines[0], format!("{:<LABEL$} │ {:>10}", "", "YTD"));
         assert_eq!(
             line(&lines, "Net Pay"),
             format!("{:<LABEL$} │ {:>10}", "Net Pay", "—")
@@ -261,13 +285,13 @@ mod tests {
         let lines = drawn(41, &mut view, &fields, &checks);
         assert_eq!(
             lines[0],
-            format!("{:<LABEL$} {:>10} │ {:>10}", "2026", "◀ 01-30 ▶", "YTD")
+            format!("{:<LABEL$} {:>10} │ {:>10}", "", "◀ 01-30 ▶", "YTD")
         );
         view.selected = 0;
         let lines = drawn(41, &mut view, &fields, &checks);
         assert_eq!(
             lines[0],
-            format!("{:<LABEL$} {:>10} │ {:>10}", "2026", "◀ 01-02 ▶", "YTD")
+            format!("{:<LABEL$} {:>10} │ {:>10}", "", "◀ 01-02 ▶", "YTD")
         );
     }
 

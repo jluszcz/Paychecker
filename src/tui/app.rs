@@ -13,7 +13,7 @@ use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Color, Style};
-use ratatui::widgets::Paragraph;
+use ratatui::widgets::{Block, Paragraph};
 use std::time::{Duration, Instant};
 
 pub(super) const STATUS_TTL: Duration = Duration::from_secs(4);
@@ -374,12 +374,15 @@ impl App {
     pub(super) fn render(&mut self, frame: &mut Frame) {
         let [body, footer] =
             Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
+        let block = Block::bordered().title(self.title());
+        let inner = block.inner(body);
+        frame.render_widget(block, body);
         match self.screen {
             Screen::Sheet => {
                 let data = calc::sheet(self.sheet.year, &self.fields, &self.paychecks);
-                sheet::render(frame, body, &mut self.sheet, &data);
+                sheet::render(frame, inner, &mut self.sheet, &data);
             }
-            Screen::Fields => fields::render(frame, body, &self.fields_view, &self.fields),
+            Screen::Fields => fields::render(frame, inner, &self.fields_view, &self.fields),
         }
         match &self.modal {
             Some(Modal::Paycheck(form)) => form::render_paycheck(frame, body, form),
@@ -390,6 +393,15 @@ impl App {
             help::render(frame, body, &self.help_topics());
         }
         frame.render_widget(self.footer(), footer);
+    }
+
+    /// The year the Sheet shows. Fields belong to no year, so their border
+    /// is bare.
+    fn title(&self) -> String {
+        match self.screen {
+            Screen::Sheet => format!(" {} ", self.sheet.year),
+            Screen::Fields => String::new(),
+        }
     }
 
     fn footer(&self) -> Paragraph<'static> {
@@ -440,7 +452,7 @@ mod tests {
     use crate::db::Kind;
     use crate::money::Cents;
     use crate::tui::test_support::{
-        STUB, app_with, ctrl, day, key, press, screen, shift, type_text,
+        STUB, app_with, ctrl, day, inside, key, press, screen, shift, type_text,
     };
     use ratatui::crossterm::event::KeyCode;
 
@@ -558,6 +570,17 @@ mod tests {
         assert!(app.help);
         app.on_key(key(KeyCode::F(1)));
         assert!(!app.help);
+    }
+
+    #[test]
+    fn the_border_shows_the_sheets_year_and_is_bare_on_fields() {
+        let mut app = standard();
+        let text = screen(&mut app, 80, 30);
+        assert!(text.starts_with("┌ 2026 ─"), "{text}");
+        press(&mut app, KeyCode::Char('['));
+        assert!(screen(&mut app, 80, 30).starts_with("┌ 2025 ─"));
+        press(&mut app, KeyCode::Char('2'));
+        assert!(screen(&mut app, 80, 30).starts_with("┌──"));
     }
 
     #[test]
@@ -732,7 +755,7 @@ mod tests {
         let mut app = standard();
         press(&mut app, KeyCode::Char('a'));
         app.on_key(key(KeyCode::F(1)));
-        let text = screen(&mut app, 100, 40);
+        let text = inside(&screen(&mut app, 100, 40)).join("\n");
         let form_at = text.find("Paycheck form").unwrap();
         let sheet_at = text.find("Sheet").unwrap();
         assert!(form_at < sheet_at);
@@ -790,8 +813,8 @@ mod tests {
         type_text(&mut app, "Base Pay");
         press(&mut app, KeyCode::Enter);
         press(&mut app, KeyCode::Char('1'));
-        let text = screen(&mut app, 100, 30);
-        let row = text.lines().find(|l| l.starts_with("Base Pay")).unwrap();
+        let lines = inside(&screen(&mut app, 100, 30));
+        let row = lines.iter().find(|l| l.starts_with("Base Pay")).unwrap();
         assert!(row.ends_with("8,000.00"), "{row}");
     }
 
@@ -869,16 +892,16 @@ mod tests {
         press(&mut app, KeyCode::Char('x'));
         press(&mut app, KeyCode::Char('1'));
         assert!(
-            !screen(&mut app, 100, 30)
-                .lines()
+            !inside(&screen(&mut app, 100, 30))
+                .iter()
                 .any(|l| l.starts_with("HSA"))
         );
         press(&mut app, KeyCode::Char('a'));
         assert!(paycheck_form(&app).amounts.iter().all(|a| a.name != "HSA"));
         press(&mut app, KeyCode::Esc);
         press(&mut app, KeyCode::Char('['));
-        let text = screen(&mut app, 100, 30);
-        let row = text.lines().find(|l| l.starts_with("HSA")).unwrap();
+        let lines = inside(&screen(&mut app, 100, 30));
+        let row = lines.iter().find(|l| l.starts_with("HSA")).unwrap();
         assert!(row.contains("100.00"), "{row}");
         press(&mut app, KeyCode::Char('e'));
         assert!(paycheck_form(&app).amounts.iter().any(|a| a.name == "HSA"));
@@ -888,27 +911,27 @@ mod tests {
     fn on_a_short_terminal_the_empty_year_hint_shows_under_the_header() {
         let mut app = app_with(&[], day(2026, 3, 1));
         let text = screen(&mut app, 80, 24);
-        assert!(text.lines().next().unwrap().starts_with("2026"));
+        assert!(inside(&text)[0].ends_with("YTD"));
         assert!(text.contains("No paychecks in 2026. Press a to add one."));
     }
 
     #[test]
     fn a_sheet_taller_than_the_terminal_scrolls_with_the_header_pinned() {
         let mut app = standard();
-        let text = screen(&mut app, 80, 24);
-        assert!(!text.lines().any(|l| l.starts_with("Net Pay")));
+        let lines = inside(&screen(&mut app, 80, 24));
+        assert!(!lines.iter().any(|l| l.starts_with("Net Pay")));
         for _ in 0..5 {
             press(&mut app, KeyCode::Down);
         }
-        let text = screen(&mut app, 80, 24);
-        assert!(text.lines().next().unwrap().starts_with("2026"));
-        assert!(text.lines().any(|l| l.starts_with("Net Pay")));
-        assert!(!text.lines().any(|l| l.starts_with("Salary")));
+        let lines = inside(&screen(&mut app, 80, 24));
+        assert!(lines[0].ends_with("YTD"));
+        assert!(lines.iter().any(|l| l.starts_with("Net Pay")));
+        assert!(!lines.iter().any(|l| l.starts_with("Salary")));
         for _ in 0..5 {
             press(&mut app, KeyCode::Up);
         }
-        let text = screen(&mut app, 80, 24);
-        assert!(text.lines().nth(1).unwrap().starts_with("Salary"));
+        let lines = inside(&screen(&mut app, 80, 24));
+        assert!(lines[1].starts_with("Salary"));
     }
 
     #[test]

@@ -92,6 +92,20 @@ pub(super) fn screen(app: &mut App, width: u16, height: u16) -> String {
     draw(width, height, |frame| app.render(frame))
 }
 
+/// The rows inside the screen's border, with the border's sides removed and
+/// trailing spaces trimmed. The title and the footer are not among them.
+pub(super) fn inside(text: &str) -> Vec<String> {
+    let lines: Vec<&str> = text.lines().collect();
+    lines[1..lines.len().saturating_sub(2)]
+        .iter()
+        .map(|l| {
+            let l = l.strip_prefix('│').unwrap_or(l);
+            let l = l.strip_suffix('│').unwrap_or(l);
+            l.trim_end().to_string()
+        })
+        .collect()
+}
+
 pub(super) fn type_text(app: &mut App, text: &str) {
     for c in text.chars() {
         press(app, KeyCode::Char(c));

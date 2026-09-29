@@ -4,8 +4,6 @@ A terminal application for recording paychecks and seeing where each one goes: p
 year-to-date amounts, net pay, and each line as a percentage of income. It replaces a personal
 spreadsheet.
 
-The design lives in [`docs/superpowers/specs/2026-09-29-paychecker-design.md`](docs/superpowers/specs/2026-09-29-paychecker-design.md).
-
 ## Usage
 
 ```bash

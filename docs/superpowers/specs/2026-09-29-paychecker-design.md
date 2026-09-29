@@ -81,6 +81,8 @@ Federal Tax, Social Security, Medicare, State Tax, Family Leave, Medical Leave, 
   calendar year: the YTD % is the ratio of the sums, not an average of per-paycheck percentages.
 - **Row visibility** for a year: a field has a row if it is active, or if any paycheck in that
   year has an amount for it. Archived fields therefore appear only in years they applied to.
+- **Missing amounts.** A paycheck with no amount for a visible field shows a blank cell there, and
+  counts it as 0 in its percentages and in YTD.
 
 ## Architecture
 
@@ -137,8 +139,8 @@ Federal Tax        20.00%    20.00%    20.00%    20.00% │    20.00%
 Net Pay            65.00%    65.00%    65.00%    65.00% │    65.00%
 ```
 
-- It opens on the year of the latest paycheck, or the current year if there are none.
-  `[`/`]` step the year.
+- It opens on the year of the latest paycheck, or the current year if there are none, with the
+  year's latest paycheck selected. `[`/`]` step the year and select that year's latest paycheck.
 - `←`/`→` move the selected paycheck column, and `Home`/`End` jump to the first or last. The label
   and YTD columns are fixed. The paycheck columns scroll horizontally to keep the selection
   visible.
@@ -147,9 +149,10 @@ Net Pay            65.00%    65.00%    65.00%    65.00% │    65.00%
   2. A rule, then Net.
   3. A blank line, then the percentage block: every deduction field, then Net Pay.
 - Archived fields that are visible render the same as active ones.
-- A year with no paychecks shows the labels and a hint to press `a`.
-- `a` add a paycheck, `e` edit the selected one, `d` delete the selected one (`y` confirms,
-  anything else cancels).
+- A year with no paychecks shows a hint to press `a` under the header, then the labels.
+- The header row stays on the top line. When the rows below it do not fit, `↑`/`↓` scroll them.
+- `a` add a paycheck, `e` edit the selected one, `d` delete the selected one: the
+  status line asks, `y` confirms, and any other key cancels.
 
 ### Paycheck form (modal, used for add and edit)
 
@@ -166,6 +169,8 @@ Net Pay            65.00%    65.00%    65.00%    65.00% │    65.00%
     lacks. They are filled with its amounts, and missing ones start blank.
   - Prefilled text puts the caret at the end. `Ctrl+U` clears the field.
 - `Tab`/`Shift-Tab` move through date and amounts, wrapping at either end.
+- When the date and amounts do not all fit, they scroll inside the form to keep the focused one in
+  view, and the Net line stays visible.
 - Text editing is MisterManager's `edit_key`: `Ctrl+A/E` start and end, `Ctrl+B/F` left and
   right, `Ctrl+W` delete the previous word, `Ctrl+U/K` kill to start or end, `Ctrl+D`/`Delete`
   delete forward, `Backspace` delete back. `←`/`→` move the caret in an amount field. Other Ctrl

@@ -139,8 +139,8 @@ Federal Tax        20.00%    20.00%    20.00%    20.00% │    20.00%
 Net Pay            65.00%    65.00%    65.00%    65.00% │    65.00%
 ```
 
-- It opens on the year of the latest paycheck, or the current year if there are none.
-  `[`/`]` step the year.
+- It opens on the year of the latest paycheck, or the current year if there are none, with the
+  year's latest paycheck selected. `[`/`]` step the year and select that year's latest paycheck.
 - `←`/`→` move the selected paycheck column, and `Home`/`End` jump to the first or last. The label
   and YTD columns are fixed. The paycheck columns scroll horizontally to keep the selection
   visible.

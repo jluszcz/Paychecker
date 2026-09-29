@@ -1,6 +1,7 @@
 //! Helpers shared by the `tui` tests.
 
-use crate::db::{Field, Paycheck, PaycheckId};
+use super::app::App;
+use crate::db::{self, Field, FieldId, Paycheck, PaycheckId};
 use crate::money::Cents;
 use chrono::NaiveDate;
 use ratatui::backend::TestBackend;
@@ -68,4 +69,25 @@ pub(super) fn buffer_text(buffer: &Buffer) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+pub(super) fn press(app: &mut App, code: KeyCode) {
+    app.on_key(key(code));
+}
+
+/// An app on a freshly seeded in-memory database holding `paychecks`.
+pub(super) fn app_with(paychecks: &[(NaiveDate, &[(&str, i64)])], today: NaiveDate) -> App {
+    let db = db::open_in_memory().unwrap();
+    for (date, amounts) in paychecks {
+        let amounts: Vec<(FieldId, Cents)> = amounts
+            .iter()
+            .map(|&(name, cents)| (db.field_id(name), Cents(cents)))
+            .collect();
+        db.insert_paycheck(*date, &amounts).unwrap();
+    }
+    App::new(db, today).unwrap()
+}
+
+pub(super) fn screen(app: &mut App, width: u16, height: u16) -> String {
+    draw(width, height, |frame| app.render(frame))
 }

@@ -6,7 +6,9 @@ on:
       - main
 
     paths:
+      - '**/*.tf'
       - '.github/workflows/**'
+      - '.terraform.lock.hcl'
       - 'Cargo**'
       - 'src/**/*.rs'
       - 'tests/**/*.rs'
@@ -21,3 +23,6 @@ permissions:
 jobs:
   ci:
     uses: jluszcz/github-utils/.github/workflows/rust-ci.yml@v2
+
+  terraform:
+    uses: jluszcz/github-utils/.github/workflows/terraform-ci.yml@v2

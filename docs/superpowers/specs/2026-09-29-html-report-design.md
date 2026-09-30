@@ -19,8 +19,8 @@ Paychecker has no `--demo` mode, so the report has no demo skip.
   - `dir` has no default, so a section with a misspelled key (`directory =`) is a
     missing-field error rather than a silently disabled report. Keys nothing reads are ignored,
     as in MisterManager.
-  - `Report::dir() -> Result<PathBuf>` expands a *leading* `~/` against `$HOME`; a `~` elsewhere
-    is left alone.
+  - `Report::dir() -> Result<PathBuf>` expands a leading `~` or `~/` against `$HOME`; a `~`
+    elsewhere is left alone, and a relative path is an error.
 
 ```toml
 # ~/.config/paychecker/config.toml

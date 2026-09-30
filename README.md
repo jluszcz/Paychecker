@@ -23,7 +23,7 @@ Off until a config file switches it on:
 ```toml
 # ~/.config/paychecker/config.toml
 [report]
-dir = "~/Dropbox/pay"   # required
+dir = "~/Dropbox/pay"   # required; absolute, or under ~
 ```
 
 When `pc` quits, it writes a self-contained HTML page of the Sheet to `<dir>/Paychecks.html`,

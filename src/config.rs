@@ -22,17 +22,25 @@ pub struct Report {
 }
 
 impl Report {
-    /// The directory, with a leading `~/` expanded against `$HOME`. TOML does
-    /// not expand it, and a `~` anywhere else is an ordinary character in a
-    /// directory name.
+    /// The directory, with a leading `~` or `~/` expanded against `$HOME`.
+    /// TOML does not expand it, and a `~` anywhere else is an ordinary
+    /// character in a directory name. A relative path is an error: it would
+    /// resolve against whichever directory `pc` happened to be started in.
     pub fn dir(&self) -> Result<PathBuf> {
-        match self.dir.strip_prefix("~/") {
-            Some(rest) => {
-                let home = std::env::var_os("HOME").context("HOME is not set")?;
-                Ok(PathBuf::from(home).join(rest))
-            }
-            None => Ok(PathBuf::from(&self.dir)),
-        }
+        let home = || std::env::var_os("HOME").context("HOME is not set");
+        let dir = if self.dir == "~" {
+            PathBuf::from(home()?)
+        } else if let Some(rest) = self.dir.strip_prefix("~/") {
+            PathBuf::from(home()?).join(rest)
+        } else {
+            PathBuf::from(&self.dir)
+        };
+        anyhow::ensure!(
+            dir.is_absolute(),
+            "[report] dir {:?} is not an absolute path",
+            self.dir
+        );
+        Ok(dir)
     }
 }
 
@@ -133,5 +141,20 @@ mod tests {
         let path = fixture("mid_tilde", "[report]\ndir = \"/tmp/a~b\"\n");
         let report = load(&path).unwrap().report.unwrap();
         assert_eq!(report.dir().unwrap(), PathBuf::from("/tmp/a~b"));
+    }
+
+    #[test]
+    fn a_bare_tilde_as_the_report_dir_is_home() {
+        let path = fixture("bare_tilde", "[report]\ndir = \"~\"\n");
+        let report = load(&path).unwrap().report.unwrap();
+        let home = PathBuf::from(std::env::var_os("HOME").unwrap());
+        assert_eq!(report.dir().unwrap(), home);
+    }
+
+    #[test]
+    fn a_relative_report_dir_is_an_error_rather_than_a_path_under_wherever_pc_started() {
+        let path = fixture("relative", "[report]\ndir = \"Dropbox/pay\"\n");
+        let report = load(&path).unwrap().report.unwrap();
+        assert!(report.dir().is_err());
     }
 }

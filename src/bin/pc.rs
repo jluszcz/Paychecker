@@ -41,8 +41,12 @@ fn main() -> Result<()> {
         None => config::default_path()?,
     };
     // Before the TUI opens: a config that does not parse should say so on a
-    // terminal in its normal mode, not after a session's work.
-    let cfg = config::load(&config_path)?;
+    // terminal in its normal mode, not after a session's work. `pc report
+    // --dir` reads nothing from it, so a broken file does not stop that run.
+    let cfg = match &cli.command {
+        Some(Command::Report { dir: Some(_) }) => config::Config::default(),
+        _ => config::load(&config_path)?,
+    };
     // A run pointed at another database or another day is a scratch session;
     // see `report::write_if_enabled`.
     let scratch = cli.db.is_some() || cli.today.is_some();

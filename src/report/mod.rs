@@ -123,13 +123,19 @@ fn written_on(path: &Path) -> Option<NaiveDate> {
 /// The two steps that can fail with a temporary file on disk, so `write` has
 /// one error path to clean up after.
 fn write_then_rename(temp: &Path, path: &Path, page: &[u8]) -> Result<()> {
-    std::fs::write(temp, page).with_context(|| format!("writing {}", temp.display()))?;
+    use std::io::Write;
+    let mut file =
+        std::fs::File::create(temp).with_context(|| format!("creating {}", temp.display()))?;
     // The rename replaces the file rather than rewriting it, so a page the
     // owner narrowed to themselves would otherwise reopen at the umask default.
+    // Narrowed before the figures go in, so they are never readable at it.
     if let Some(existing) = std::fs::metadata(path).ok().filter(|m| m.is_file()) {
-        std::fs::set_permissions(temp, existing.permissions())
+        file.set_permissions(existing.permissions())
             .with_context(|| format!("setting permissions on {}", temp.display()))?;
     }
+    file.write_all(page)
+        .with_context(|| format!("writing {}", temp.display()))?;
+    drop(file);
     std::fs::rename(temp, path).with_context(|| format!("renaming onto {}", path.display()))
 }
 

@@ -68,7 +68,7 @@ profile       = "paychecker"   # default; a profile in ~/.aws/credentials
 interval_days = 7              # default
 ```
 
-A backup is `paychecks-<timestamp>.db` at the root of a bucket that holds nothing else.
+A backup is `paychecks-<timestamp>.db.zst`, a zstd-compressed copy of the database, at the root of a bucket that holds nothing else.
 
 One-time setup: `terraform apply` creates the bucket, the IAM user and its access key, and its
 outputs feed the `paychecker` profile and the config file:
@@ -92,12 +92,13 @@ read, overwrite, delete, or list backups.
 `pc backup --status` prints the last upload and the next due date; `pc backup --force` uploads
 regardless of the schedule. `pc backup` uploads whatever database it is given, `--db` included.
 
-To restore, quit `pc`, then under your own AWS identity:
+To restore, quit `pc`, then under your own AWS identity (`zstd` must be installed):
 
 ```bash
 aws s3 ls s3://<bucket>/
 rm -f ~/.local/share/paychecker/paychecks.db-wal ~/.local/share/paychecker/paychecks.db-shm
-aws s3 cp s3://<bucket>/paychecks-20260820T140305Z.db ~/.local/share/paychecker/paychecks.db
+aws s3 cp s3://<bucket>/paychecks-20260820T140305Z.db.zst .
+zstd -d -f paychecks-20260820T140305Z.db.zst -o ~/.local/share/paychecker/paychecks.db
 ```
 
 The `-wal` file goes first because SQLite would replay a leftover one into the restored database.

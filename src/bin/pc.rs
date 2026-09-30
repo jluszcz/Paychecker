@@ -68,7 +68,6 @@ fn main() -> Result<()> {
     };
     let db = db::open(&path)?;
     let today = cli.today.unwrap_or_else(|| Local::now().date_naive());
-    let state_path = backup::state::default_path()?;
     let is_explicit_backup = matches!(cli.command, Some(Command::Backup { .. }));
 
     match cli.command {
@@ -102,6 +101,7 @@ fn main() -> Result<()> {
             print_written(&report::write(&db, &dir, today)?);
         }
         Some(Command::Backup { force, status }) => {
+            let state_path = backup::state::default_path()?;
             if status {
                 print_backup_status(&cfg, &state_path);
             } else {
@@ -117,7 +117,7 @@ fn main() -> Result<()> {
     // uploaded, so a `--db` copy on the schedule would take the real
     // database's turn. An explicit `pc backup` uploads whatever it is given.
     if !is_explicit_backup && is_default_db {
-        scheduled_backup(&path, &cfg, &state_path);
+        scheduled_backup(&path, &cfg);
     }
     Ok(())
 }
@@ -134,8 +134,15 @@ const BACKUP_TIME: &str = "%Y-%m-%d %H:%M UTC";
 
 /// Never fatal: the session's work is saved, and a failed upload leaves the
 /// schedule due, so the next run tries again.
-fn scheduled_backup(db_path: &Path, cfg: &config::Config, state_path: &Path) {
-    match backup::run_if_due(db_path, cfg, state_path, Utc::now(), false) {
+fn scheduled_backup(db_path: &Path, cfg: &config::Config) {
+    // The state path needs `HOME` or `XDG_STATE_HOME`, so it is resolved only
+    // once there is a backup to schedule.
+    if cfg.backup.is_none() {
+        return;
+    }
+    let result = backup::state::default_path()
+        .and_then(|state_path| backup::run_if_due(db_path, cfg, &state_path, Utc::now(), false));
+    match result {
         Ok(outcome @ backup::Outcome::BackedUp { .. }) => print_backup(&outcome),
         // Silent: nothing happened, and this runs after every quit.
         Ok(_) => {}

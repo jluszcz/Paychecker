@@ -50,11 +50,15 @@ pub const FILE_NAME: &str = "Paychecks.html";
 
 pub use jluszcz_finance_utils::report::{Outcome, Written};
 
+/// The page as `html::page` writes it, for the day `today` quotes.
+fn render(db: &Db, today: NaiveDate) -> Result<String> {
+    Ok(html::page(&Snapshot::load(db, today, Local::now())?))
+}
+
 /// Write the report into `dir`, whatever the config says. `pc report` calls
 /// this directly; the quit path reaches it through `write_if_enabled`.
 pub fn write(db: &Db, dir: &Path, today: NaiveDate) -> Result<Written> {
-    let snapshot = Snapshot::load(db, today, Local::now())?;
-    jluszcz_finance_utils::report::write(dir, FILE_NAME, &html::page(&snapshot))
+    jluszcz_finance_utils::report::write(dir, FILE_NAME, &render(db, today)?)
 }
 
 /// Write the report on quit, if the config asks for one and it is due.
@@ -69,7 +73,7 @@ pub fn write_if_enabled(db: &Db, cfg: &Config, today: NaiveDate, scratch: bool) 
         FILE_NAME,
         today,
         db.wrote_rows(),
-        || Ok(html::page(&Snapshot::load(db, today, Local::now())?)),
+        || render(db, today),
     )
 }
 

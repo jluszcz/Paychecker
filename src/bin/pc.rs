@@ -127,7 +127,7 @@ fn main() -> Result<()> {
 fn print_written(written: &report::Written) {
     println!(
         "wrote {} to {}",
-        report::human_bytes(written.bytes),
+        jluszcz_finance_utils::human_bytes(written.bytes),
         written.path.display()
     );
 }
@@ -163,7 +163,7 @@ fn print_backup(outcome: &backup::Outcome) {
         backup::Outcome::BackedUp { bucket, key, bytes } => {
             println!(
                 "backed up {} to s3://{bucket}/{key}",
-                report::human_bytes(*bytes)
+                jluszcz_finance_utils::human_bytes(*bytes)
             );
         }
     }
@@ -178,7 +178,9 @@ fn print_backup_status(cfg: &config::Config, state_path: &Path) {
     };
     println!(
         "bucket {}, profile {}, every {} days",
-        backup_cfg.bucket, backup_cfg.profile, backup_cfg.interval_days
+        backup_cfg.bucket,
+        backup_cfg.profile_or(config::APP),
+        backup_cfg.interval_days
     );
     let state = match backup::state::read(state_path) {
         Ok(state) => state,

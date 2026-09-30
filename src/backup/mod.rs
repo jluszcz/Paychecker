@@ -138,7 +138,12 @@ fn run(
         let bytes = std::fs::metadata(&snapshot)
             .with_context(|| format!("measuring {}", snapshot.display()))?
             .len();
-        upload(&backup.profile, &backup.bucket, &key, &snapshot)?;
+        upload(
+            backup.profile_or(crate::config::APP),
+            &backup.bucket,
+            &key,
+            &snapshot,
+        )?;
         Ok::<u64, anyhow::Error>(bytes)
     })();
 

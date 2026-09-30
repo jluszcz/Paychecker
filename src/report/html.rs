@@ -10,24 +10,7 @@ use super::Snapshot;
 use crate::calc::{self, Sheet};
 use crate::money::Cents;
 use chrono::Datelike;
-
-/// Every interpolation of user-typed text goes through here: a field named
-/// with an angle bracket would otherwise truncate the page at its own row.
-/// Escapes `&`, `<`, `>` and `"`, never `'`, because no attribute on this
-/// page is single-quoted.
-fn escape(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for ch in text.chars() {
-        match ch {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            _ => out.push(ch),
-        }
-    }
-    out
-}
+use jluszcz_finance_utils::report::escape;
 
 /// A year's radio id. The `y` is there because a CSS id selector cannot
 /// start with a digit, and `#2026` would match nothing.

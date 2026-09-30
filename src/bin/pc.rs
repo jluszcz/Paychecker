@@ -66,13 +66,12 @@ fn main() -> Result<()> {
         Some(path) => path,
         None => db::default_path()?,
     };
-    let db = db::open(&path)?;
     let today = cli.today.unwrap_or_else(|| Local::now().date_naive());
     let is_explicit_backup = matches!(cli.command, Some(Command::Backup { .. }));
 
     match cli.command {
         None => {
-            let db = tui::run(db, today)?;
+            let db = tui::run(db::open(&path)?, today)?;
             // The session's work is already saved, so a report that cannot be
             // written is a warning, not a failed run.
             match report::write_if_enabled(&db, &cfg, today, scratch) {
@@ -83,6 +82,7 @@ fn main() -> Result<()> {
             }
         }
         Some(Command::Report { dir }) => {
+            let db = db::open(&path)?;
             // An unset [report] section means "not on every quit", which is
             // a different question from the one `pc report` asks.
             let dir = match dir {
@@ -100,6 +100,8 @@ fn main() -> Result<()> {
             };
             print_written(&report::write(&db, &dir, today)?);
         }
+        // Never opens the database: opening creates and seeds a missing
+        // file, and a mistyped `--db` would then be uploaded as a backup.
         Some(Command::Backup { force, status }) => {
             let state_path = backup::state::default_path()?;
             if status {

@@ -37,7 +37,7 @@ ignored (so a `prefix` line does nothing).
 - `create_snapshot_dir(dir)`: on unix, removes our own leftover and creates the leaf
   non-recursively with mode 0700, so a squatted `/tmp/paychecker-backup-<pid>` cannot receive the
   snapshot.
-- `Outcome { Disabled, NotDue { next }, BackedUp { key, bytes } }`.
+- `Outcome { Disabled, NotDue { next }, BackedUp { bucket, key, bytes } }`.
 - `run_if_due(db_path, cfg, state_path, now, force) -> Result<Outcome>`: returns `Disabled` with no
   `[backup]`; reads state (an unreadable file warns and counts as never backed up); returns
   `NotDue` before touching the database; otherwise snapshots into the temp dir, measures, uploads,

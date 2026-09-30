@@ -36,9 +36,11 @@ fn interval(days: u32) -> TimeDelta {
 // The snapshot is the whole database in cleartext, in a directory under `/tmp`
 // on Linux. The leaf is created non-recursively with mode 0700, and that is
 // the guard: a recursive create returns `Ok` for a directory someone else made
-// first, keeps its mode, and follows a symlink planted there. Our own leftover
-// from a killed run is removed first; anything that survives the removal is
-// left for the `create` to fail on.
+// first, keeps its mode, and follows a symlink planted there. A directory
+// already at this path (a killed run that had the same pid) is removed first;
+// anything that survives the removal is left for the `create` to fail on. A
+// run killed mid-upload leaves its own pid's directory behind, mode 0700,
+// for the system's temp cleaner.
 #[cfg(unix)]
 fn create_snapshot_dir(dir: &Path) -> std::io::Result<()> {
     use std::os::unix::fs::DirBuilderExt;

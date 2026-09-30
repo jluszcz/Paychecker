@@ -56,6 +56,7 @@ check runs after the screen is torn down and after the report is written, so a s
 holds up the prompt, and a failure prints to stderr without failing the run. A run given `--db`
 skips it: the state file records when a backup last ran, not which file, so a scratch copy would
 take the real database's turn. `--today` does not skip it, since the schedule reads the real clock.
+`pc report --dir` skips it too, since that run does not read the config file.
 
 Off until a config file switches it on:
 
@@ -85,7 +86,8 @@ profile must carry static access keys; SSO and `credential_process` profiles wil
 The bucket is `paychecker-<account id>-<region>-an`, composed rather than chosen so its name says
 nothing to anyone without the profile. Public access is blocked, and objects move to
 Standard-Infrequent Access at 30 days and expire at 365. The `paychecker` profile can only
-`PutObject`: it cannot read, delete, or list backups.
+`PutObject`, and only as a conditional write that refuses to replace an existing object: it cannot
+read, overwrite, delete, or list backups.
 
 `pc backup --status` prints the last upload and the next due date; `pc backup --force` uploads
 regardless of the schedule. `pc backup` uploads whatever database it is given, `--db` included.

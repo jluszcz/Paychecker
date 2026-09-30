@@ -55,6 +55,10 @@ pub fn upload(profile: &str, bucket: &str, key: &str, file: &Path) -> Result<()>
             .key(key)
             .body(body)
             .content_type("application/vnd.sqlite3")
+            // Create, never replace: the IAM policy refuses a PutObject
+            // without this, which is what stops a stolen key from overwriting
+            // an existing backup.
+            .if_none_match("*")
             .send()
             .await
             // An `SdkError` displays as "service error"; the AccessDenied or

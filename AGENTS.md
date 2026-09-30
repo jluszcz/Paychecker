@@ -29,8 +29,9 @@ output is what the tests assert against. `minify_html` is named only in `src/rep
 `aws_sdk_s3`, `aws_smithy_types` and `tokio` are named only in `s3.rs`, whose runtime lives for one
 upload. `db::snapshot` makes the copy so `rusqlite` stays in `src/db/`. The invariants:
 
-- The IAM user in `paychecker.tf` may only `PutObject`. The key is long-lived and unattended, so
-  the policy bounds it; restores use the owner's own identity.
+- The IAM user in `paychecker.tf` may only `PutObject`, and only with `If-None-Match: *`, which
+  `s3::upload` sends. The key is long-lived and unattended, so the policy bounds it: it can add a
+  backup but never replace one. Restores use the owner's own identity.
 - The bucket is the application's own and its name is composed from the account and region, which
   is what keeps it out of the repository and lets the lifecycle rules cover the whole bucket.
 - No key prefix: `backup::key_for` and the IAM policy's `<bucket arn>/*` would otherwise have to

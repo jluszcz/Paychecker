@@ -114,6 +114,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "backup" {
     id     = "expire-noncurrent"
     status = "Enabled"
 
+    filter {}
+
     noncurrent_version_expiration {
       noncurrent_days = 30
     }
@@ -143,8 +145,8 @@ resource "aws_iam_access_key" "paychecker" {
 
 data "aws_iam_policy_document" "paychecker" {
   # PutObject and nothing else. The key is long-lived and unattended, so the
-  # policy is what bounds it: a stolen key can add objects, but cannot read a
-  # backup, delete one, or list the bucket. Restores run under the owner's own
+  # policy is what bounds it: a stolen key can add objects, but cannot read,
+  # overwrite, or delete a backup, or list the bucket. Restores run under the owner's own
   # identity.
   #
   # The whole bucket rather than a prefix: it holds nothing but backups, and a
@@ -153,6 +155,15 @@ data "aws_iam_policy_document" "paychecker" {
   statement {
     actions   = ["s3:PutObject"]
     resources = ["${aws_s3_bucket.backup.arn}/*"]
+
+    # Only with `If-None-Match: *`, so a put can create a backup but never
+    # replace one. Without it the bucket has no versioning to fall back on,
+    # and an overwrite would destroy a backup as surely as a delete.
+    condition {
+      test     = "Null"
+      variable = "s3:if-none-match"
+      values   = ["false"]
+    }
   }
 }
 

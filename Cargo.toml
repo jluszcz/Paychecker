@@ -6,6 +6,12 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0"
+# ring rather than aws-lc: aws-sdk-s3's "rustls" feature is the ring-based
+# client, and aws-config's default aws-lc-based https client is left off
+# entirely rather than swapped.
+aws-config = { version = "1.10", default-features = false, features = ["behavior-version-latest", "rt-tokio"] }
+aws-sdk-s3 = { version = "1.142", default-features = false, features = ["behavior-version-latest", "rt-tokio", "rustls"] }
+aws-smithy-types = "1.6"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
 clap = { version = "4.6", features = ["derive"] }
 minify-html = "0.18"
@@ -13,6 +19,7 @@ ratatui = "0.30"
 rusqlite = { version = "0.40", features = ["bundled", "chrono"] }
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "2.0"
+tokio = { version = "1.53", features = ["rt", "net", "time"] }
 toml = "1.1"
 
 [[bin]]

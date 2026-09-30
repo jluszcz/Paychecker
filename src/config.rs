@@ -77,6 +77,18 @@ impl Config {
             backup: None,
         }
     }
+
+    #[cfg(test)]
+    pub(crate) fn backing_up_to(bucket: &str) -> Config {
+        Config {
+            report: None,
+            backup: Some(Backup {
+                bucket: bucket.to_string(),
+                profile: "a-profile".to_string(),
+                interval_days: 7,
+            }),
+        }
+    }
 }
 
 /// `$XDG_CONFIG_HOME/paychecker/config.toml`, or `~/.config` when it is unset

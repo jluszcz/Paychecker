@@ -7,7 +7,7 @@ mod paycheck;
 use crate::money::Cents;
 use anyhow::{Context, Result};
 use chrono::NaiveDate;
-use rusqlite::Connection;
+use rusqlite::{Connection, OpenFlags};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -122,6 +122,25 @@ pub fn open_in_memory() -> Result<Db> {
     Ok(Db { conn })
 }
 
+/// Copy the database at `src` to `dest`, which must not exist yet.
+/// `VACUUM INTO` reads one consistent snapshot, WAL included, while another
+/// connection has the file open. `src` is opened without the create flag, so
+/// a wrong path is an error rather than an empty database copied as though it
+/// were the real one.
+pub fn snapshot(src: &Path, dest: &Path) -> Result<()> {
+    let dest = dest
+        .to_str()
+        .with_context(|| format!("{} is not valid UTF-8", dest.display()))?;
+    let conn = Connection::open_with_flags(
+        src,
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .with_context(|| format!("opening database at {}", src.display()))?;
+    conn.execute("VACUUM INTO ?1", [dest])
+        .with_context(|| format!("snapshotting to {dest}"))?;
+    Ok(())
+}
+
 fn prepare(conn: &Connection) -> Result<()> {
     conn.pragma_update(None, "foreign_keys", "ON")?;
     conn.execute_batch("PRAGMA journal_mode=WAL;")?;
@@ -221,6 +240,41 @@ mod tests {
         )
         .unwrap();
         assert!(db.wrote_rows());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The scheduled backup runs while `pc`'s own connection is still open,
+    /// and a WAL database's recent writes live in the `-wal` file until a
+    /// checkpoint.
+    #[test]
+    fn a_snapshot_holds_writes_still_in_the_wal_of_an_open_database() {
+        let dir = scratch_dir("snapshot");
+        let path = dir.join("paychecks.db");
+        let db = open(&path).unwrap();
+        let salary = db.field_id("Salary");
+        let date = NaiveDate::from_ymd_opt(2026, 1, 16).unwrap();
+        db.insert_paycheck(date, &[(salary, Cents(400_000))])
+            .unwrap();
+
+        let copy = dir.join("copy.db");
+        snapshot(&path, &copy).unwrap();
+
+        let paychecks = open(&copy).unwrap().paychecks().unwrap();
+        assert_eq!(paychecks.len(), 1);
+        assert_eq!(paychecks[0].date, date);
+        assert_eq!(paychecks[0].amounts.get(&salary), Some(&Cents(400_000)));
+        drop(db);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn snapshotting_a_path_with_no_database_is_an_error_rather_than_an_empty_backup() {
+        let dir = scratch_dir("snapshot_missing");
+        std::fs::create_dir_all(&dir).unwrap();
+        let absent = dir.join("absent.db");
+
+        assert!(snapshot(&absent, &dir.join("copy.db")).is_err());
+        assert!(!absent.exists());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

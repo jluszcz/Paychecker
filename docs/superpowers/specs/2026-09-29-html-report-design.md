@@ -91,9 +91,11 @@ here.
   - the YTD column (`ytd`) is `position:sticky; right:0`, so it stays in view while the
     paychecks scroll
   - every other paycheck column is shaded (`--band`)
+  - below 480px: half the padding, a 0.75rem face, a fixed 6rem label column that wraps, cents
+    hidden (every amount's cents are in a `span.c`), and `scroll-snap` on the date headers
   - cell classes `n` (figure) and `d` (date) with `white-space:nowrap`
   - an absent amount is an empty cell, as on the screen
-  - money via `Cents`' `Display`; percents via `calc::show`
+  - money via `Cents`' `Display`, its cents split into `span.c`; percents via `calc::show`
 - **Escaping:** `escape()` (`&`, `<`, `>`, `"`) on every field name, since it is user text.
 - **Empty database:** no tabs, and one panel reading "No paychecks yet."
 - **Footer:** "Written YYYY-MM-DD HH:MM" from `generated_at`.

@@ -8,6 +8,7 @@
 
 use super::Snapshot;
 use crate::calc::{self, Sheet};
+use crate::money::Cents;
 use chrono::Datelike;
 
 /// Every interpolation of user-typed text goes through here: a field named
@@ -84,6 +85,16 @@ fn tab_rules(snapshot: &Snapshot) -> String {
         .collect()
 }
 
+/// An amount with its cents in a span of their own, which a phone's rules
+/// hide: on a narrow screen a column of whole dollars is a column more in view.
+/// Hiding the span truncates rather than rounds, so a phone shows the dollars
+/// the figure actually contains.
+fn money(cents: Cents) -> String {
+    let text = cents.to_string();
+    let (whole, fraction) = text.split_at(text.len() - 3);
+    format!("{whole}<span class=\"c\">{fraction}</span>")
+}
+
 /// One row of the grid: a label, a cell per paycheck, and the YTD cell. Only
 /// the label is escaped, because the cells are figures this crate formatted.
 fn grid_row(
@@ -123,11 +134,11 @@ fn grid(sheet: &Sheet) -> String {
             .cells
             .iter()
             .rev()
-            .map(|c| c.map_or_else(String::new, |c| c.to_string()));
-        body.push_str(&grid_row("", &r.name, cells, r.ytd.to_string()));
+            .map(|c| c.map_or_else(String::new, money));
+        body.push_str(&grid_row("", &r.name, cells, money(r.ytd)));
     }
-    let net = sheet.net.iter().rev().map(ToString::to_string);
-    body.push_str(&grid_row("net", "Net", net, sheet.net_ytd.to_string()));
+    let net = sheet.net.iter().rev().map(|&c| money(c));
+    body.push_str(&grid_row("net", "Net", net, money(sheet.net_ytd)));
     body.push_str(&format!(
         "<tr class=\"gap\"><td colspan=\"{}\"></td></tr>",
         sheet.columns.len() + 2
@@ -160,6 +171,12 @@ fn grid(sheet: &Sheet) -> String {
 /// the first cell of every row and YTD the last, so `even` minus the last is
 /// exactly the 1st, 3rd, 5th... paycheck; the gap row's one cell is neither.
 ///
+/// A phone gets one media query that buys columns: half the padding, a
+/// smaller face, cents hidden, and a label column fixed at `6rem` that wraps
+/// its longer names. The fixed width is what lets the columns snap: a swipe
+/// settles each paycheck against the label column's edge, `6rem` plus its
+/// `0.25rem` padding either side, rather than half under it.
+///
 /// The radios are moved off the page rather than `display:none`d, which would
 /// take them out of the focus order.
 const STYLE: &str = "\
@@ -185,7 +202,16 @@ const STYLE: &str = "\
     color:var(--muted);border-bottom:2px solid transparent}\
     section.panel{display:none;overflow-x:auto}\
     footer{border-top:1px solid var(--rule);margin-top:1.5rem;padding-top:0.6rem}\
-    p.stamp{color:var(--muted);margin:0;font-size:0.85rem}";
+    p.stamp{color:var(--muted);margin:0;font-size:0.85rem}\
+    @media (max-width: 480px){\
+    body{padding:0.5rem}\
+    table{font-size:0.75rem}\
+    td,th{padding:0.2rem 0.25rem}\
+    .c{display:none}\
+    section.panel{scroll-snap-type:x mandatory;scroll-padding-left:6.5rem}\
+    th.d{scroll-snap-align:start}\
+    tr>th:first-child{white-space:normal;width:6rem;min-width:6rem;max-width:6rem}\
+    }";
 
 const STAMP_FORMAT: &str = "%Y-%m-%d %H:%M";
 
@@ -305,8 +331,8 @@ mod tests {
             ),
             "{page}"
         );
-        assert!(page.contains("<tr><th>Salary</th><td class=\"n\">4,000.00</td><td class=\"n\">4,000.00</td><td class=\"n ytd\">8,000.00</td></tr>"), "{page}");
-        assert!(page.contains("<tr class=\"net\"><th>Net</th><td class=\"n\">3,400.00</td><td class=\"n\">3,400.00</td><td class=\"n ytd\">6,800.00</td></tr>"), "{page}");
+        assert!(page.contains("<tr><th>Salary</th><td class=\"n\">4,000<span class=\"c\">.00</span></td><td class=\"n\">4,000<span class=\"c\">.00</span></td><td class=\"n ytd\">8,000<span class=\"c\">.00</span></td></tr>"), "{page}");
+        assert!(page.contains("<tr class=\"net\"><th>Net</th><td class=\"n\">3,400<span class=\"c\">.00</span></td><td class=\"n\">3,400<span class=\"c\">.00</span></td><td class=\"n ytd\">6,800<span class=\"c\">.00</span></td></tr>"), "{page}");
         assert!(page.contains("<tr><th>Federal Tax</th><td class=\"n\">15.00%</td><td class=\"n\">15.00%</td><td class=\"n ytd\">15.00%</td></tr>"), "{page}");
         assert!(page.contains("<tr><th>Net Pay</th><td class=\"n\">85.00%</td><td class=\"n\">85.00%</td><td class=\"n ytd\">85.00%</td></tr>"), "{page}");
     }
@@ -315,7 +341,7 @@ mod tests {
     fn an_amount_a_paycheck_does_not_have_is_an_empty_cell() {
         let db = with_checks(&[day(2026, 1, 2), day(2026, 1, 16)]);
         let page = page(&snapshot(&db, day(2026, 1, 16)));
-        assert!(page.contains("<tr><th>Medicare</th><td class=\"n\"></td><td class=\"n\"></td><td class=\"n ytd\">0.00</td></tr>"), "{page}");
+        assert!(page.contains("<tr><th>Medicare</th><td class=\"n\"></td><td class=\"n\"></td><td class=\"n ytd\">0<span class=\"c\">.00</span></td></tr>"), "{page}");
     }
 
     /// The report reads from the latest paycheck back, the opposite of the
@@ -336,12 +362,12 @@ mod tests {
         );
         assert!(
             page.contains(
-                "<th>Salary</th><td class=\"n\">4,100.00</td><td class=\"n\">4,000.00</td>"
+                "<th>Salary</th><td class=\"n\">4,100<span class=\"c\">.00</span></td><td class=\"n\">4,000<span class=\"c\">.00</span></td>"
             ),
             "{page}"
         );
         assert!(
-            page.contains("<th>Net</th><td class=\"n\">3,500.00</td><td class=\"n\">3,400.00</td>"),
+            page.contains("<th>Net</th><td class=\"n\">3,500<span class=\"c\">.00</span></td><td class=\"n\">3,400<span class=\"c\">.00</span></td>"),
             "{page}"
         );
         assert!(
@@ -363,6 +389,41 @@ mod tests {
             "{page}"
         );
         assert!(page.contains("<th class=\"n ytd\">YTD</th>"), "{page}");
+    }
+
+    /// On a phone the cents are the first thing to go, so every amount
+    /// carries them in a span the narrow-screen rules can hide. Percentages
+    /// keep their decimals: there they are the figure, not noise.
+    #[test]
+    fn an_amounts_cents_are_split_off_so_a_phone_can_hide_them() {
+        let page = page(&snapshot(&with_checks(&[day(2026, 1, 2)]), day(2026, 1, 2)));
+        assert!(
+            page.contains("<td class=\"n\">4,000<span class=\"c\">.00</span></td>"),
+            "{page}"
+        );
+        assert!(page.contains("<td class=\"n\">15.00%</td>"), "{page}");
+    }
+
+    /// Everything a phone needs is in one media query: less padding, a
+    /// smaller face, a fixed label column that wraps, cents hidden, and the
+    /// columns snapping to the label column's edge.
+    #[test]
+    fn a_narrow_screen_tightens_the_grid_and_snaps_its_columns() {
+        let page = page(&snapshot(&with_checks(&[day(2026, 1, 2)]), day(2026, 1, 2)));
+        let narrow = page
+            .split("@media (max-width: 480px){")
+            .nth(1)
+            .expect("no narrow-screen rules");
+        for rule in [
+            "body{padding:0.5rem}",
+            "table{font-size:0.75rem}",
+            ".c{display:none}",
+            "section.panel{scroll-snap-type:x mandatory;scroll-padding-left:6.5rem}",
+            "th.d{scroll-snap-align:start}",
+            "tr>th:first-child{white-space:normal;width:6rem;min-width:6rem;max-width:6rem}",
+        ] {
+            assert!(narrow.contains(rule), "missing {rule}: {narrow}");
+        }
     }
 
     /// A year runs to ~26 look-alike columns of figures, so every other

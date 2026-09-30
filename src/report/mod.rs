@@ -335,6 +335,29 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// The phone's rules are all inside one media query, which a minifier is
+    /// free to rewrite. It sorts properties, so each is matched on its own.
+    #[test]
+    fn minification_leaves_the_narrow_screen_rules_intact() {
+        let dir = scratch("narrow");
+        let written = write(&with_checks(&[day(2026, 1, 2)]), &dir, day(2026, 1, 2)).unwrap();
+        let page = std::fs::read_to_string(&written.path).unwrap();
+        let narrow = page
+            .split("@media")
+            .find(|block| block.contains("480px"))
+            .unwrap_or_else(|| panic!("no narrow-screen rules: {page}"));
+        for piece in [
+            ".c{display:none}",
+            "scroll-snap-type:x mandatory",
+            "scroll-padding-left:6.5rem",
+            "scroll-snap-align:start",
+            "max-width:6rem",
+        ] {
+            assert!(narrow.contains(piece), "missing {piece}: {narrow}");
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     #[test]
     fn a_size_under_a_mebibyte_is_whole_kibibytes_rounded_up() {
         assert_eq!(human_bytes(2048), "2 KiB");

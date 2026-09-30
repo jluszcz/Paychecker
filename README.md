@@ -29,7 +29,8 @@ dir = "~/Dropbox/pay"   # required
 When `pc` quits, it writes a self-contained HTML page of the Sheet to `<dir>/Paychecks.html`,
 one tab per year. The page opens on the current year, or the newest year that has paychecks.
 Paychecks run newest first, the reverse of the Sheet screen, and YTD stays pinned to the right
-edge while they scroll.
+edge while they scroll. On a phone the grid tightens, shows whole dollars (the cents are cut, not
+rounded), and snaps each swipe to a whole paycheck column.
 It carries no script and loads nothing, so it reads on a phone offline. Pointing `dir` at a
 synced folder puts it there.
 

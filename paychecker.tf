@@ -150,7 +150,8 @@ data "aws_iam_policy_document" "paychecker" {
   # identity.
   #
   # The whole bucket rather than a prefix: it holds nothing but backups, and a
-  # prefix here would have to match `backup::key_for` with nothing tying the two
+  # prefix here would have to match
+  # `jluszcz_finance_utils::backup::Spec::key_for` with nothing tying the two
   # together but `AccessDenied`.
   statement {
     actions   = ["s3:PutObject"]

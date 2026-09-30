@@ -14,9 +14,10 @@ use crate::db::Db;
 use anyhow::Result;
 use app::App;
 use chrono::NaiveDate;
+pub(super) use jluszcz_finance_utils::tui::centered;
+use jluszcz_finance_utils::tui::is_press;
 use ratatui::DefaultTerminal;
-use ratatui::crossterm::event::{self, Event, KeyEvent, KeyEventKind};
-use ratatui::layout::Rect;
+use ratatui::crossterm::event::{self, Event};
 use std::time::Duration;
 
 const TICK: Duration = Duration::from_millis(250);
@@ -57,21 +58,4 @@ fn event_loop(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
         }
     }
     Ok(())
-}
-
-/// Windows reports releases too; acting on both would run every key twice.
-fn is_press(key: &KeyEvent) -> bool {
-    key.kind == KeyEventKind::Press
-}
-
-/// A `width` × `height` rectangle centered in `area`, shrunk to fit it.
-pub(super) fn centered(area: Rect, width: u16, height: u16) -> Rect {
-    let width = width.min(area.width);
-    let height = height.min(area.height);
-    Rect {
-        x: area.x + (area.width - width) / 2,
-        y: area.y + (area.height - height) / 2,
-        width,
-        height,
-    }
 }

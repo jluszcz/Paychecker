@@ -5,8 +5,10 @@ use super::text::{TextBuffer, edit_key, is_bare};
 use crate::calc::{self, Totals};
 use crate::db::{Field, FieldId, Kind, Paycheck, PaycheckId};
 use crate::money::Cents;
-use anyhow::{Context, Result, anyhow};
-use chrono::{Datelike, Months, NaiveDate, TimeDelta};
+use anyhow::{Context, Result};
+use chrono::{Months, NaiveDate, TimeDelta};
+pub(super) use jluszcz_finance_utils::tui::date::iso;
+use jluszcz_finance_utils::tui::date::parse_shorthand;
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::Rect;
@@ -21,27 +23,6 @@ pub(super) fn parse_date(raw: &str, today: NaiveDate) -> Result<NaiveDate> {
     }
     NaiveDate::parse_from_str(raw, "%Y-%m-%d")
         .with_context(|| format!("not a YYYY-MM-DD or M/D date: {raw:?}"))
-}
-
-/// `M/D` -- a month and a day, taking the next year that month occurs in.
-///
-/// The year turns on the month alone: `1/2` typed on January 20th is this
-/// January, a backdated entry, while `1/2` typed in December is next year's.
-fn parse_shorthand(raw: &str, today: NaiveDate) -> Result<NaiveDate> {
-    let malformed = || anyhow!("not a M/D date: {raw:?}");
-    let (month, day) = raw.split_once('/').ok_or_else(malformed)?;
-    let month: u32 = month.trim().parse().map_err(|_| malformed())?;
-    let day: u32 = day.trim().parse().map_err(|_| malformed())?;
-    let year = if month >= today.month() {
-        today.year()
-    } else {
-        today.year() + 1
-    };
-    NaiveDate::from_ymd_opt(year, month, day).ok_or_else(|| anyhow!("no such date: {raw:?}"))
-}
-
-pub(super) fn iso(date: NaiveDate) -> String {
-    date.format("%Y-%m-%d").to_string()
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -435,21 +416,6 @@ mod tests {
         assert_eq!(
             parse_date(" 2026-01-16 ", today()).unwrap(),
             day(2026, 1, 16)
-        );
-    }
-
-    #[test]
-    fn m_d_shorthand_takes_this_year_when_the_month_is_not_behind() {
-        assert_eq!(parse_date("1/30", today()).unwrap(), day(2026, 1, 30));
-        assert_eq!(parse_date("1/2", today()).unwrap(), day(2026, 1, 2));
-        assert_eq!(parse_date("3/1", today()).unwrap(), day(2026, 3, 1));
-    }
-
-    #[test]
-    fn m_d_typed_in_late_december_for_january_is_next_year() {
-        assert_eq!(
-            parse_date("1/2", day(2026, 12, 30)).unwrap(),
-            day(2027, 1, 2)
         );
     }
 

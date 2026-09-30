@@ -15,33 +15,22 @@ cargo run --bin pc -- --db /tmp/scratch.db --today 2026-01-16
 ## Design
 
 Paychecker borrows its stack and conventions from the sibling project MisterManager (Rust,
-ratatui, rusqlite). Pieces such as `TextBuffer`/`edit_key` and the migration pattern are copied
-in and trimmed rather than shared through a common crate.
+ratatui, rusqlite). What the two share lives in `jluszcz_finance_utils` (`../finance-utils`):
+money, config paths and sections, the report's minified atomic write, the S3 backup, and TUI text
+editing. The migration pattern is still copied in and trimmed.
 
 `src/report/` writes the Sheet as an HTML page on quit (see README). The page carries **no
 script** and is read offline on a phone. So every control is CSS (the year tabs are radios and
 `:checked ~` rules generated from the same list as the markup). The file is renamed onto its name,
-never written to it. It is minified in `report::write`, not in `html::page`, whose readable
-output is what the tests assert against. `minify_html` is named only in `src/report/mod.rs`, and
-`serde`/`toml` only in `src/config.rs` and `src/backup/state.rs`.
+never written to it. `html::page` stays readable, because its tests assert against it;
+`finance_utils::report::write` minifies on the way to the disk. `serde` is named only in
+`src/config.rs`.
 
-`src/backup/` copies the database to S3 (see README), ported from MisterManager's. `aws_config`,
-`aws_sdk_s3`, `aws_smithy_types` and `tokio` are named only in `s3.rs`, whose runtime lives for one
-upload. `db::snapshot` makes the copy so `rusqlite` stays in `src/db/`. The invariants:
-
-- The IAM user in `paychecker.tf` may only `PutObject`, and only with `If-None-Match: *`, which
-  `s3::upload` sends. The key is long-lived and unattended, so the policy bounds it: it can add a
-  backup but never replace one. Restores use the owner's own identity.
-- The bucket is the application's own and its name is composed from the account and region, which
-  is what keeps it out of the repository and lets the lifecycle rules cover the whole bucket.
-- No key prefix: `backup::key_for` and the IAM policy's `<bucket arn>/*` would otherwise have to
-  spell it identically, with `AccessDenied` as the only sign they drifted.
-- The schedule reads `Utc::now()`, never `--today`, and the scheduled check runs only on the
-  default database. `pc backup` is exempt from the second rule.
-- The state file is advisory: unreadable means a warning and one redundant upload. It is written
-  only after a successful upload, and the temp snapshot is removed on both paths.
-- `interval_days` is clamped to ten years before it reaches `TimeDelta::days`, which panics
-  outside chrono's calendar.
+Backups go through `finance_utils::backup` (its AGENTS.md holds the invariants). `lib.rs`'s `BACKUP`
+names the app, and `db::snapshot` is the snapshot, which keeps `rusqlite` in `src/db/`. What stays
+here: `paychecker.tf`'s IAM policy must allow `PutObject` only with `If-None-Match` present, and the
+policy's `<bucket arn>/*` must match the crate's un-prefixed keys. The scheduled check runs only on
+the default database, and never after `pc backup`.
 
 ## No real data in the repository
 

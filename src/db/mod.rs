@@ -253,7 +253,7 @@ mod tests {
         let db = open(&path).unwrap();
         let salary = db.field_id("Salary");
         let date = NaiveDate::from_ymd_opt(2026, 1, 16).unwrap();
-        db.insert_paycheck(date, &[(salary, Cents(1_234_56))])
+        db.insert_paycheck(date, &[(salary, Cents(400_000))])
             .unwrap();
 
         let copy = dir.join("copy.db");
@@ -262,7 +262,7 @@ mod tests {
         let paychecks = open(&copy).unwrap().paychecks().unwrap();
         assert_eq!(paychecks.len(), 1);
         assert_eq!(paychecks[0].date, date);
-        assert_eq!(paychecks[0].amounts.get(&salary), Some(&Cents(1_234_56)));
+        assert_eq!(paychecks[0].amounts.get(&salary), Some(&Cents(400_000)));
         drop(db);
         std::fs::remove_dir_all(&dir).unwrap();
     }

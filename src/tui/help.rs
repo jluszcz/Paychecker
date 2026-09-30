@@ -36,7 +36,7 @@ pub(super) const SHEET: &[Entry] = &[
     entry(
         "⇧←→",
         Some("page"),
-        "Jump a screen of paychecks back or ahead",
+        "Jump a screen of paychecks back or ahead; PgUp/PgDn do the same",
     ),
     entry("Home/End", None, "Select the first or last paycheck"),
     entry("↑/↓", None, "Scroll the rows when they do not fit"),

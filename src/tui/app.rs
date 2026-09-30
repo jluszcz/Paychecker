@@ -173,6 +173,8 @@ impl App {
         let last = self.year_paychecks().len().saturating_sub(1);
         let shift = key.modifiers.contains(KeyModifiers::SHIFT);
         match key.code {
+            KeyCode::PageUp => self.sheet.page(false, last),
+            KeyCode::PageDown => self.sheet.page(true, last),
             KeyCode::Left if shift => self.sheet.page(false, last),
             KeyCode::Right if shift => self.sheet.page(true, last),
             KeyCode::Left => self.sheet.selected = self.sheet.selected.saturating_sub(1),
@@ -546,6 +548,23 @@ mod tests {
         app.on_key(shift(KeyCode::Right));
         app.on_key(shift(KeyCode::Right));
         assert_eq!(app.sheet.selected, 11);
+    }
+
+    #[test]
+    fn page_up_and_down_page_like_shift_arrows() {
+        let dates: Vec<NaiveDate> = (0..12)
+            .map(|i| day(2026, 1, 2) + chrono::Days::new(14 * i))
+            .collect();
+        let checks: Vec<_> = dates.iter().map(|&d| (d, STUB)).collect();
+        let mut app = app_with(&checks, day(2026, 6, 10));
+        screen(&mut app, 80, 30);
+        press(&mut app, KeyCode::PageUp);
+        assert_eq!(app.sheet.selected, 7);
+        press(&mut app, KeyCode::PageUp);
+        press(&mut app, KeyCode::PageUp);
+        assert_eq!(app.sheet.selected, 0);
+        press(&mut app, KeyCode::PageDown);
+        assert_eq!(app.sheet.selected, 4);
     }
 
     #[test]

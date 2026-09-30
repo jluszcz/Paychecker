@@ -18,6 +18,13 @@ Paychecker borrows its stack and conventions from the sibling project MisterMana
 ratatui, rusqlite). Pieces such as `TextBuffer`/`edit_key` and the migration pattern are copied
 in and trimmed rather than shared through a common crate.
 
+`src/report/` writes the Sheet as an HTML page on quit (see README). The page carries **no
+script** and is read offline on a phone. So every control is CSS (the year tabs are radios and
+`:checked ~` rules generated from the same list as the markup). The file is renamed onto its name,
+never written to it. It is minified in `report::write`, not in `html::page`, whose readable
+output is what the tests assert against. `minify_html` is named only in `src/report/mod.rs`, and
+`serde`/`toml` only in `src/config.rs`.
+
 ## No real data in the repository
 
 The repository is public; the owner's pay is not. **Nothing committed here may carry a real

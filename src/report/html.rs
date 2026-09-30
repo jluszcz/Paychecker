@@ -102,17 +102,19 @@ fn grid_row(
         format!(" class=\"{class}\"")
     };
     format!(
-        "<tr{class}><th>{}</th>{cells}<td class=\"n\">{ytd}</td></tr>",
+        "<tr{class}><th>{}</th>{cells}<td class=\"n ytd\">{ytd}</td></tr>",
         escape(label)
     )
 }
 
-/// A year's Sheet, laid out as `tui::sheet` draws it: paychecks across, the
-/// amounts, a rule, `Net`, a gap, then the percentages.
+/// A year's Sheet with its paychecks newest first, the reverse of the Sheet
+/// screen: this page is read on a phone to check the latest pay. Then the
+/// amounts, a rule, `Net`, a gap, and the percentages, as the screen has them.
 fn grid(sheet: &Sheet) -> String {
     let dates: String = sheet
         .columns
         .iter()
+        .rev()
         .map(|c| format!("<th class=\"n d\">{}</th>", c.date.format("%m-%d")))
         .collect();
     let mut body = String::new();
@@ -120,21 +122,22 @@ fn grid(sheet: &Sheet) -> String {
         let cells = r
             .cells
             .iter()
+            .rev()
             .map(|c| c.map_or_else(String::new, |c| c.to_string()));
         body.push_str(&grid_row("", &r.name, cells, r.ytd.to_string()));
     }
-    let net = sheet.net.iter().map(ToString::to_string);
+    let net = sheet.net.iter().rev().map(ToString::to_string);
     body.push_str(&grid_row("net", "Net", net, sheet.net_ytd.to_string()));
     body.push_str(&format!(
         "<tr class=\"gap\"><td colspan=\"{}\"></td></tr>",
         sheet.columns.len() + 2
     ));
     for r in &sheet.percent_rows {
-        let cells = r.cells.iter().map(|p| calc::show(*p));
+        let cells = r.cells.iter().rev().map(|p| calc::show(*p));
         body.push_str(&grid_row("", &r.label, cells, calc::show(r.ytd)));
     }
     format!(
-        "<table><thead><tr><th></th>{dates}<th class=\"n\">YTD</th></tr></thead>\
+        "<table><thead><tr><th></th>{dates}<th class=\"n ytd\">YTD</th></tr></thead>\
          <tbody>{body}</tbody></table>"
     )
 }
@@ -148,6 +151,9 @@ fn grid(sheet: &Sheet) -> String {
 /// cell's borders do not travel with it under `collapse`. `n` and `d` never
 /// wrap: a comma or a hyphen is a break opportunity a narrow column would
 /// take, drawing `4,` over `000.00`.
+///
+/// YTD is pinned to the right edge the same way, so a reader scrolling back
+/// through the year never loses the total.
 ///
 /// Every other paycheck column is shaded: a year is ~26 look-alike columns
 /// of figures, and the band keeps the eye on one down the page. The label is
@@ -169,6 +175,7 @@ const STYLE: &str = "\
     .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}\
     .d{white-space:nowrap}\
     tr>:nth-child(even):not(:last-child){background:var(--band)}\
+    .ytd{position:sticky;right:0;background:var(--bg);border-left:1px solid var(--rule)}\
     tr>th:first-child{position:sticky;left:0;background:var(--bg);white-space:nowrap}\
     tr.net th,tr.net td{border-top:2px solid var(--fg)}\
     tr.gap td{border-bottom:none;padding:0.5rem}\
@@ -217,6 +224,7 @@ mod tests {
     use super::super::fixture::{day, snapshot, with_checks};
     use super::*;
     use crate::db::Kind;
+    use crate::money::Cents;
 
     #[test]
     fn the_page_makes_no_external_request_and_carries_no_script() {
@@ -293,21 +301,68 @@ mod tests {
         let page = page(&snapshot(&db, day(2026, 1, 16)));
         assert!(
             page.contains(
-                "<th class=\"n d\">01-02</th><th class=\"n d\">01-16</th><th class=\"n\">YTD</th>"
+                "<th class=\"n d\">01-16</th><th class=\"n d\">01-02</th><th class=\"n ytd\">YTD</th>"
             ),
             "{page}"
         );
-        assert!(page.contains("<tr><th>Salary</th><td class=\"n\">4,000.00</td><td class=\"n\">4,000.00</td><td class=\"n\">8,000.00</td></tr>"), "{page}");
-        assert!(page.contains("<tr class=\"net\"><th>Net</th><td class=\"n\">3,400.00</td><td class=\"n\">3,400.00</td><td class=\"n\">6,800.00</td></tr>"), "{page}");
-        assert!(page.contains("<tr><th>Federal Tax</th><td class=\"n\">15.00%</td><td class=\"n\">15.00%</td><td class=\"n\">15.00%</td></tr>"), "{page}");
-        assert!(page.contains("<tr><th>Net Pay</th><td class=\"n\">85.00%</td><td class=\"n\">85.00%</td><td class=\"n\">85.00%</td></tr>"), "{page}");
+        assert!(page.contains("<tr><th>Salary</th><td class=\"n\">4,000.00</td><td class=\"n\">4,000.00</td><td class=\"n ytd\">8,000.00</td></tr>"), "{page}");
+        assert!(page.contains("<tr class=\"net\"><th>Net</th><td class=\"n\">3,400.00</td><td class=\"n\">3,400.00</td><td class=\"n ytd\">6,800.00</td></tr>"), "{page}");
+        assert!(page.contains("<tr><th>Federal Tax</th><td class=\"n\">15.00%</td><td class=\"n\">15.00%</td><td class=\"n ytd\">15.00%</td></tr>"), "{page}");
+        assert!(page.contains("<tr><th>Net Pay</th><td class=\"n\">85.00%</td><td class=\"n\">85.00%</td><td class=\"n ytd\">85.00%</td></tr>"), "{page}");
     }
 
     #[test]
     fn an_amount_a_paycheck_does_not_have_is_an_empty_cell() {
         let db = with_checks(&[day(2026, 1, 2), day(2026, 1, 16)]);
         let page = page(&snapshot(&db, day(2026, 1, 16)));
-        assert!(page.contains("<tr><th>Medicare</th><td class=\"n\"></td><td class=\"n\"></td><td class=\"n\">0.00</td></tr>"), "{page}");
+        assert!(page.contains("<tr><th>Medicare</th><td class=\"n\"></td><td class=\"n\"></td><td class=\"n ytd\">0.00</td></tr>"), "{page}");
+    }
+
+    /// The report reads from the latest paycheck back, the opposite of the
+    /// Sheet screen: on a phone the newest figures are the ones checked.
+    #[test]
+    fn the_newest_paycheck_is_the_leftmost_column_in_every_row() {
+        let db = with_checks(&[day(2026, 1, 2)]);
+        let (salary, federal) = (db.field_id("Salary"), db.field_id("Federal Tax"));
+        db.insert_paycheck(
+            day(2026, 1, 16),
+            &[(salary, Cents(410_000)), (federal, Cents(60_000))],
+        )
+        .unwrap();
+        let page = page(&snapshot(&db, day(2026, 1, 16)));
+        assert!(
+            page.contains("<th class=\"n d\">01-16</th><th class=\"n d\">01-02</th>"),
+            "{page}"
+        );
+        assert!(
+            page.contains(
+                "<th>Salary</th><td class=\"n\">4,100.00</td><td class=\"n\">4,000.00</td>"
+            ),
+            "{page}"
+        );
+        assert!(
+            page.contains("<th>Net</th><td class=\"n\">3,500.00</td><td class=\"n\">3,400.00</td>"),
+            "{page}"
+        );
+        assert!(
+            page.contains(
+                "<th>Federal Tax</th><td class=\"n\">14.63%</td><td class=\"n\">15.00%</td>"
+            ),
+            "{page}"
+        );
+    }
+
+    /// A year is wider than a phone, so YTD sticks to the panel's right edge
+    /// the way the labels stick to its left, and stays in view while the
+    /// paychecks scroll between them.
+    #[test]
+    fn the_ytd_column_is_pinned_to_the_right_edge() {
+        let page = page(&snapshot(&with_checks(&[day(2026, 1, 2)]), day(2026, 1, 2)));
+        assert!(
+            page.contains(".ytd{position:sticky;right:0;background:var(--bg)"),
+            "{page}"
+        );
+        assert!(page.contains("<th class=\"n ytd\">YTD</th>"), "{page}");
     }
 
     /// A year runs to ~26 look-alike columns of figures, so every other

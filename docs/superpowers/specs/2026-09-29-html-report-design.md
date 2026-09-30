@@ -81,12 +81,16 @@ here.
   generated `#yYYYY:checked ~ .panels #pYYYY { display:block }` rule per year built from the
   same list as the markup. The checked radio is `today`'s year when it has paychecks, and the
   newest year otherwise.
-- **A year's panel is the Sheet grid, mirroring `tui::sheet`:**
+- **A year's panel is the Sheet grid, mirroring `tui::sheet` except that paychecks run newest
+  first** (the page is read to check the latest pay):
   - a header row of the paycheck dates as `%m-%d` plus `YTD` (the year is the tab)
   - one row per `AmountRow`, then a rule, then `Net`
   - a blank spacer row, then one row per `PercentRow`
   - labels bold; the label column `position:sticky; left:0` with an opaque background
   - the panel carries `overflow-x:auto`, so the grid scrolls sideways inside it
+  - the YTD column (`ytd`) is `position:sticky; right:0`, so it stays in view while the
+    paychecks scroll
+  - every other paycheck column is shaded (`--band`)
   - cell classes `n` (figure) and `d` (date) with `white-space:nowrap`
   - an absent amount is an empty cell, as on the screen
   - money via `Cents`' `Display`; percents via `calc::show`

@@ -23,7 +23,7 @@ mod tests {
     #[test]
     fn backup_key_is_the_paychecks_stem_and_a_utc_timestamp() {
         let now = Utc.with_ymd_and_hms(2026, 8, 20, 14, 3, 5).unwrap();
-        assert_eq!(BACKUP.key_for(now), "paychecks-20260820T140305Z.db");
+        assert_eq!(BACKUP.key_for(now), "paychecks-20260820T140305Z.db.zst");
     }
 
     #[test]

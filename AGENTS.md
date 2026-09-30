@@ -23,10 +23,10 @@ editing. The migration pattern is still copied in and trimmed.
 script** and is read offline on a phone. So every control is CSS (the year tabs are radios and
 `:checked ~` rules generated from the same list as the markup). The file is renamed onto its name,
 never written to it. `html::page` stays readable, because its tests assert against it;
-`finance_utils::report::write` minifies on the way to the disk. `serde` is named only in
+`jluszcz_finance_utils::report::write` minifies on the way to the disk. `serde` is named only in
 `src/config.rs`.
 
-Backups go through `finance_utils::backup` (its AGENTS.md holds the invariants). `lib.rs`'s `BACKUP`
+Backups go through `jluszcz_finance_utils::backup` (its AGENTS.md holds the invariants). `lib.rs`'s `BACKUP`
 names the app, and `db::snapshot` is the snapshot, which keeps `rusqlite` in `src/db/`. What stays
 here: `paychecker.tf`'s IAM policy must allow `PutObject` only with `If-None-Match` present, and the
 policy's `<bucket arn>/*` must match the crate's un-prefixed keys. The scheduled check runs only on

@@ -1,4 +1,5 @@
-//! The configuration file, and the only place `serde` and `toml` are named.
+//! The configuration file, and the primary home of `serde` and `toml`, which
+//! `src/backup/state.rs` names as well.
 //!
 //! An absent file, or one missing a section, means that section's feature is
 //! off: a clean checkout and an unconfigured machine both do nothing. A file

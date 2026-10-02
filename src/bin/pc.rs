@@ -17,7 +17,8 @@ struct Cli {
     /// Run against a copy of the default database in a fresh temporary
     /// directory, leaving the real one untouched -- for trying a migration
     /// before it reaches the file that matters. The copy is left behind and
-    /// its path printed, so it can be inspected afterwards.
+    /// its path printed, so it can be inspected afterwards, and the report is
+    /// written beside it rather than into the configured directory.
     #[arg(long, global = true, conflicts_with = "db")]
     scratch: bool,
     /// Treat this date as today. Defaults to the local date.
@@ -86,14 +87,23 @@ fn main() -> Result<()> {
         }
         None => db::default_path()?,
     };
+    // The copy's own directory: a `--scratch` run's page goes there, beside
+    // the database it was rendered from, never over the real one.
+    let scratch_dir = path.parent().filter(|_| cli.scratch).map(PathBuf::from);
     let today = cli.today.unwrap_or_else(|| Local::now().date_naive());
 
     match cli.command {
         None => {
             let db = tui::run(db::open(&path)?, today)?;
             // The session's work is already saved, so a report that cannot be
-            // written is a warning, not a failed run.
-            match report::write_if_enabled(&db, &cfg, today, scratch) {
+            // written is a warning, not a failed run. A scratch directory's
+            // page is written whatever the config says: it is fresh, and the
+            // page is there to be compared with the real one.
+            let outcome = match &scratch_dir {
+                Some(dir) => report::write(&db, dir, today).map(report::Outcome::Written),
+                None => report::write_if_enabled(&db, &cfg, today, scratch),
+            };
+            match outcome {
                 Ok(report::Outcome::Written(written)) => print_written(&written),
                 // Silent: nothing happened, and this runs after every quit.
                 Ok(_) => {}
@@ -104,7 +114,7 @@ fn main() -> Result<()> {
             let db = db::open(&path)?;
             // An unset [report] section means "not on every quit", which is
             // a different question from the one `pc report` asks.
-            let dir = match dir {
+            let dir = match dir.or(scratch_dir) {
                 Some(dir) => dir,
                 None => cfg
                     .report

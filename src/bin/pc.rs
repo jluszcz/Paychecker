@@ -14,6 +14,12 @@ struct Cli {
     /// Database file. Defaults to ~/.local/share/paychecker/paychecks.db
     #[arg(long, global = true)]
     db: Option<PathBuf>,
+    /// Run against a copy of the default database in a fresh temporary
+    /// directory, leaving the real one untouched -- for trying a migration
+    /// before it reaches the file that matters. The copy is left behind and
+    /// its path printed, so it can be inspected afterwards.
+    #[arg(long, global = true, conflicts_with = "db")]
+    scratch: bool,
     /// Treat this date as today. Defaults to the local date.
     #[arg(long, global = true)]
     today: Option<NaiveDate>,
@@ -50,18 +56,37 @@ fn main() -> Result<()> {
         Some(Command::Report { dir: Some(_) }) => config::Config::default(),
         _ => config::load(&config_path)?,
     };
+    let is_explicit_backup = matches!(cli.command, Some(Command::Backup(_)));
+    // Refused before the copy is made: a throwaway copy has nothing worth
+    // restoring, and an upload of one would sit in the bucket beside the real
+    // backups looking like one.
+    if cli.scratch && is_explicit_backup {
+        anyhow::bail!("--scratch cannot be backed up: drop the flag to back up the real database");
+    }
     // A run pointed at another database or another day is a scratch session;
     // see `report::write_if_enabled`.
-    let scratch = cli.db.is_some() || cli.today.is_some();
+    let scratch = cli.scratch || cli.db.is_some() || cli.today.is_some();
     // Asked before `cli.db` is moved into a path: the schedule belongs to the
-    // default database only.
-    let is_default_db = cli.db.is_none();
+    // default database only, and a `--scratch` copy is no more it than a
+    // `--db` is.
+    let is_default_db = cli.db.is_none() && !cli.scratch;
     let path = match cli.db {
         Some(path) => path,
+        // `db::snapshot` opens nothing through `db::open`, so the copy keeps
+        // the schema version the original has and this run is the one that
+        // migrates it.
+        None if cli.scratch => {
+            let copy = jluszcz_finance_utils::scratch::copy(
+                BACKUP.app,
+                &db::default_path()?,
+                db::snapshot,
+            )?;
+            eprintln!("scratch database: {}", copy.display());
+            copy
+        }
         None => db::default_path()?,
     };
     let today = cli.today.unwrap_or_else(|| Local::now().date_naive());
-    let is_explicit_backup = matches!(cli.command, Some(Command::Backup(_)));
 
     match cli.command {
         None => {

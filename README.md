@@ -18,7 +18,8 @@ pc backup               # upload the database to S3 if a backup is due
 `--scratch` snapshots the default database into a fresh directory under the system temp dir,
 readable only by you, and runs against that, so a new migration can be tried on real data before
 it touches the real file. It combines with any subcommand but `backup`, prints the copy's path, and
-leaves the copy behind for inspection.
+leaves the copy behind for inspection. Its report goes into the scratch directory beside the copy --
+on quit and from `pc --scratch report` -- so it can be compared with the real one.
 
 `1` shows the Sheet (a year's paychecks, YTD, net, and percentages) and `2` the Fields list.
 `a` adds, `e` edits, and `d` deletes on either screen; `?` lists every key.
@@ -42,8 +43,8 @@ It carries no script and loads nothing, so it reads on a phone offline. Pointing
 synced folder puts it there.
 
 The write happens after the screen is torn down, and prints `wrote 2 KiB to <dir>/Paychecks.html`.
-A quit that writes nothing prints nothing. A failure prints to stderr and does not fail the run. A run given `--scratch`, `--db` or `--today` writes nothing on quit: it is a scratch session, and the
-configured page belongs to the real database. The file is written beside its name and renamed into place, so a sync client never
+A quit that writes nothing prints nothing. A failure prints to stderr and does not fail the run. A run given `--db` or `--today` writes nothing on quit: it is a scratch session, and the
+configured page belongs to the real database. A `--scratch` run writes into its scratch directory instead. The file is written beside its name and renamed into place, so a sync client never
 uploads half a page.
 
 A quit that changed nothing leaves the page alone if it was already written that day. That check

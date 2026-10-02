@@ -10,9 +10,15 @@ spreadsheet.
 cargo install --path .
 pc                      # opens ~/.local/share/paychecker/paychecks.db
 pc --db /tmp/demo.db    # a scratch database
+pc --scratch            # a throwaway copy of the default database
 pc report               # write the HTML report without opening the application
 pc backup               # upload the database to S3 if a backup is due
 ```
+
+`--scratch` snapshots the default database into a fresh directory under the system temp dir,
+readable only by you, and runs against that, so a new migration can be tried on real data before
+it touches the real file. It combines with any subcommand but `backup`, prints the copy's path, and
+leaves the copy behind for inspection.
 
 `1` shows the Sheet (a year's paychecks, YTD, net, and percentages) and `2` the Fields list.
 `a` adds, `e` edits, and `d` deletes on either screen; `?` lists every key.
@@ -36,7 +42,7 @@ It carries no script and loads nothing, so it reads on a phone offline. Pointing
 synced folder puts it there.
 
 The write happens after the screen is torn down, and prints `wrote 2 KiB to <dir>/Paychecks.html`.
-A quit that writes nothing prints nothing. A failure prints to stderr and does not fail the run. A run given `--db` or `--today` writes nothing on quit: it is a scratch session, and the
+A quit that writes nothing prints nothing. A failure prints to stderr and does not fail the run. A run given `--scratch`, `--db` or `--today` writes nothing on quit: it is a scratch session, and the
 configured page belongs to the real database. The file is written beside its name and renamed into place, so a sync client never
 uploads half a page.
 
@@ -54,7 +60,7 @@ pc report --dir /tmp/export  # anywhere, [report] section or not
 `pc` uploads a copy of the database to S3 when the last upload is older than `interval_days`. The
 check runs after the screen is torn down and after the report is written, so a slow network only
 holds up the prompt, and a failure prints to stderr without failing the run. A run given `--db`
-skips it: the state file records when a backup last ran, not which file, so a scratch copy would
+or `--scratch` skips it: the state file records when a backup last ran, not which file, so a scratch copy would
 take the real database's turn. `--today` does not skip it, since the schedule reads the real clock.
 `pc report --dir` skips it too, since that run does not read the config file.
 

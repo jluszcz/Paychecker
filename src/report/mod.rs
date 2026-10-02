@@ -63,7 +63,7 @@ pub fn write(db: &Db, dir: &Path, today: NaiveDate) -> Result<Written> {
 
 /// Write the report on quit, if the config asks for one and it is due.
 ///
-/// `scratch` is a run given `--db` or `--today`. The configured directory
+/// `scratch` is a run given `--scratch`, `--db` or `--today`. The configured directory
 /// holds the page for the real database on the real day, so such a run skips
 /// before anything is read; `pc report --dir` is how it writes one.
 pub fn write_if_enabled(db: &Db, cfg: &Config, today: NaiveDate, scratch: bool) -> Result<Outcome> {

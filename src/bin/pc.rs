@@ -1,32 +1,27 @@
 use anyhow::{Context, Result};
-use chrono::{Local, NaiveDate};
 use clap::{Parser, Subcommand};
 use jluszcz_finance_utils::backup::cli::{self as backup, BackupArgs};
+use jluszcz_finance_utils::cli::CommonArgs;
 use paychecker::{BACKUP, config, db, report, tui};
 use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(
     name = "pc",
-    about = "Paychecker: record paychecks and see where each one goes"
+    about = "Paychecker: record paychecks and see where each one goes",
+    mut_arg("db", |a| a.help("Database file. Defaults to ~/.local/share/paychecker/paychecks.db")),
+    mut_arg("scratch", |a| a.help(
+        "Run against a copy of the default database in a fresh temporary \
+         directory, leaving the real one untouched -- for trying a migration \
+         before it reaches the file that matters. The copy is left behind and \
+         its path printed, so it can be inspected afterwards, and the report is \
+         written beside it rather than into the configured directory"
+    )),
+    mut_arg("config", |a| a.help("Config file. Defaults to ~/.config/paychecker/config.toml"))
 )]
 struct Cli {
-    /// Database file. Defaults to ~/.local/share/paychecker/paychecks.db
-    #[arg(long, global = true)]
-    db: Option<PathBuf>,
-    /// Run against a copy of the default database in a fresh temporary
-    /// directory, leaving the real one untouched -- for trying a migration
-    /// before it reaches the file that matters. The copy is left behind and
-    /// its path printed, so it can be inspected afterwards, and the report is
-    /// written beside it rather than into the configured directory.
-    #[arg(long, global = true, conflicts_with = "db")]
-    scratch: bool,
-    /// Treat this date as today. Defaults to the local date.
-    #[arg(long, global = true)]
-    today: Option<NaiveDate>,
-    /// Config file. Defaults to ~/.config/paychecker/config.toml
-    #[arg(long, global = true)]
-    config: Option<PathBuf>,
+    #[command(flatten)]
+    common: CommonArgs,
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -46,10 +41,7 @@ enum Command {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let config_path = match cli.config {
-        Some(path) => path,
-        None => config::default_path()?,
-    };
+    let config_path = cli.common.config_path(config::APP)?;
     // Before the TUI opens: a config that does not parse should say so on a
     // terminal in its normal mode, not after a session's work. `pc report
     // --dir` reads nothing from it, so a broken file does not stop that run.
@@ -61,36 +53,31 @@ fn main() -> Result<()> {
     // Refused before the copy is made: a throwaway copy has nothing worth
     // restoring, and an upload of one would sit in the bucket beside the real
     // backups looking like one.
-    if cli.scratch && is_explicit_backup {
+    if cli.common.scratch && is_explicit_backup {
         anyhow::bail!("--scratch cannot be backed up: drop the flag to back up the real database");
     }
     // A run pointed at another database or another day is a scratch session;
     // see `report::write_if_enabled`.
-    let scratch = cli.scratch || cli.db.is_some() || cli.today.is_some();
-    // Asked before `cli.db` is moved into a path: the schedule belongs to the
-    // default database only, and a `--scratch` copy is no more it than a
-    // `--db` is.
-    let is_default_db = cli.db.is_none() && !cli.scratch;
-    let path = match cli.db {
-        Some(path) => path,
-        // `db::snapshot` opens nothing through `db::open`, so the copy keeps
-        // the schema version the original has and this run is the one that
-        // migrates it.
-        None if cli.scratch => {
-            let copy = jluszcz_finance_utils::scratch::copy(
-                BACKUP.app,
-                &db::default_path()?,
-                db::snapshot,
-            )?;
-            eprintln!("scratch database: {}", copy.display());
-            copy
-        }
-        None => db::default_path()?,
-    };
+    let scratch = cli.common.is_scratch_session();
+    // The schedule belongs to the default database only, and a `--scratch`
+    // copy is no more it than a `--db` is.
+    let is_default_db = cli.common.is_default_db();
+    // `db::snapshot` opens nothing through `db::open`, so a scratch copy keeps
+    // the schema version the original has and this run is the one that
+    // migrates it.
+    let path = cli
+        .common
+        .db_path(BACKUP.app, db::default_path, db::snapshot)?;
+    if cli.common.scratch {
+        eprintln!("scratch database: {}", path.display());
+    }
     // The copy's own directory: a `--scratch` run's page goes there, beside
     // the database it was rendered from, never over the real one.
-    let scratch_dir = path.parent().filter(|_| cli.scratch).map(PathBuf::from);
-    let today = cli.today.unwrap_or_else(|| Local::now().date_naive());
+    let scratch_dir = path
+        .parent()
+        .filter(|_| cli.common.scratch)
+        .map(PathBuf::from);
+    let today = cli.common.today_or_local();
 
     match cli.command {
         None => {

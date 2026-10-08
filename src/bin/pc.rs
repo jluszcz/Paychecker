@@ -1,7 +1,8 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::{Parser, Subcommand};
 use jluszcz_finance_utils::backup::cli::{self as backup, BackupArgs};
 use jluszcz_finance_utils::cli::CommonArgs;
+use jluszcz_finance_utils::report::cli::{self as report_cli, ReportArgs};
 use paychecker::{BACKUP, config, db, report, tui};
 use std::path::PathBuf;
 
@@ -29,12 +30,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Write the HTML report without opening the application.
-    Report {
-        /// Directory to write Paychecks.html into. Defaults to the config
-        /// file's [report] dir, which this makes optional.
-        #[arg(long)]
-        dir: Option<PathBuf>,
-    },
+    Report(ReportArgs),
     /// Back the database up to S3, if the schedule says one is due.
     Backup(BackupArgs),
 }
@@ -46,7 +42,7 @@ fn main() -> Result<()> {
     // terminal in its normal mode, not after a session's work. `pc report
     // --dir` reads nothing from it, so a broken file does not stop that run.
     let cfg = match &cli.command {
-        Some(Command::Report { dir: Some(_) }) => config::Config::default(),
+        Some(Command::Report(ReportArgs { dir: Some(_) })) => config::Config::default(),
         _ => config::load(&config_path)?,
     };
     let is_explicit_backup = matches!(cli.command, Some(Command::Backup(_)));
@@ -86,35 +82,23 @@ fn main() -> Result<()> {
             // written is a warning, not a failed run. A scratch directory's
             // page is written whatever the config says: it is fresh, and the
             // page is there to be compared with the real one.
-            let outcome = match &scratch_dir {
+            report_cli::after_quit(match &scratch_dir {
                 Some(dir) => report::write(&db, dir, today).map(report::Outcome::Written),
                 None => report::write_if_enabled(&db, &cfg, today, scratch),
-            };
-            match outcome {
-                Ok(report::Outcome::Written(written)) => print_written(&written),
-                // Silent: nothing happened, and this runs after every quit.
-                Ok(_) => {}
-                Err(e) => eprintln!("report failed: {e:#}"),
-            }
+            });
         }
-        Some(Command::Report { dir }) => {
+        Some(Command::Report(args)) => {
             let db = db::open(&path)?;
-            // An unset [report] section means "not on every quit", which is
-            // a different question from the one `pc report` asks.
-            let dir = match dir.or(scratch_dir) {
-                Some(dir) => dir,
-                None => cfg
-                    .report
-                    .as_ref()
-                    .with_context(|| {
-                        format!(
-                            "no --dir given, and no [report] section naming one in {}",
-                            config_path.display()
-                        )
-                    })?
-                    .dir()?,
-            };
-            print_written(&report::write(&db, &dir, today)?);
+            let dir = report_cli::dir(
+                &args,
+                scratch_dir.as_deref(),
+                cfg.report.as_ref(),
+                &config_path,
+            )?;
+            println!(
+                "{}",
+                report_cli::describe(&report::write(&db, &dir, today)?)
+            );
         }
         // Never opens the database: opening creates and seeds a missing
         // file, and a mistyped `--db` would then be uploaded as a backup.
@@ -130,12 +114,4 @@ fn main() -> Result<()> {
         backup::scheduled(&BACKUP, &path, cfg.backup.as_ref(), db::snapshot);
     }
     Ok(())
-}
-
-fn print_written(written: &report::Written) {
-    println!(
-        "wrote {} to {}",
-        jluszcz_finance_utils::human_bytes(written.bytes),
-        written.path.display()
-    );
 }

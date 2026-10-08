@@ -16,8 +16,9 @@ cargo run --bin pc -- --db /tmp/scratch.db --today 2026-01-16
 
 Paychecker borrows its stack and conventions from the sibling project MisterManager (Rust,
 ratatui, rusqlite). What the two share lives in `jluszcz_finance_utils` (`../finance-utils`):
-money, config paths and sections, the report's minified atomic write, the S3 backup, and TUI text
-editing. The migration pattern is still copied in and trimmed.
+money, config paths and sections, the report's minified atomic write, the S3 backup, the TUI's
+event loop, status line and text editing, and opening, migrating and snapshotting the database.
+`db::migration` holds only this app's schema, seed and arms.
 
 `src/report/` writes the Sheet as an HTML page on quit (see README). The page carries **no
 script** and is read offline on a phone. So every control is CSS (the year tabs are radios and

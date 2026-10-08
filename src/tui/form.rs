@@ -10,6 +10,7 @@ use chrono::NaiveDate;
 use jluszcz_finance_utils::tui::date::Step;
 pub(super) use jluszcz_finance_utils::tui::date::iso;
 pub(super) use jluszcz_finance_utils::tui::date::parse as parse_date;
+use jluszcz_finance_utils::tui::{date, step_index};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::Rect;
@@ -163,10 +164,8 @@ impl PaycheckForm {
     }
 
     fn step(&mut self, step: Step) {
-        if let Ok(date) = parse_date(self.date.value(), self.today)
-            && let Some(next) = step.apply(date)
-        {
-            self.date.set(iso(next));
+        if let Some(next) = date::stepped(self.date.value(), self.today, step) {
+            self.date.set(next);
         }
     }
 
@@ -174,14 +173,13 @@ impl PaycheckForm {
         if self.focus == 0 {
             self.normalize_date();
         }
-        let stops = (self.amounts.len() + 1) as isize;
-        self.focus = (self.focus as isize + by).rem_euclid(stops) as usize;
+        self.focus = step_index(self.focus, self.amounts.len() + 1, by);
     }
 
     /// Show the date in ISO form once it parses; leave text that does not.
     fn normalize_date(&mut self) {
-        if let Ok(date) = parse_date(self.date.value(), self.today) {
-            self.date.set(iso(date));
+        if let Some(text) = date::normalized(self.date.value(), self.today) {
+            self.date.set(text);
         }
     }
 }

@@ -100,9 +100,12 @@ impl Db {
     }
 }
 
+/// The database's file name under the data directory.
+pub const FILE_NAME: &str = "paychecks.db";
+
 /// `~/.local/share/paychecker/paychecks.db`.
 pub fn default_path() -> Result<PathBuf> {
-    jluszcz_finance_utils::config::data_path(crate::config::APP, "paychecks.db")
+    jluszcz_finance_utils::config::data_path(crate::config::APP, FILE_NAME)
 }
 
 /// Open (creating if needed) the database at `path`, creating its parent

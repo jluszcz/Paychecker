@@ -8,16 +8,7 @@ use paychecker::{BACKUP, config, db, report, tui};
 #[derive(Parser)]
 #[command(
     name = "pc",
-    about = "Paychecker: record paychecks and see where each one goes",
-    mut_arg("db", |a| a.help("Database file. Defaults to ~/.local/share/paychecker/paychecks.db")),
-    mut_arg("scratch", |a| a.help(
-        "Run against a copy of the default database in a fresh temporary \
-         directory, leaving the real one untouched -- for trying a migration \
-         before it reaches the file that matters. The copy is left behind and \
-         its path printed, so it can be inspected afterwards, and the report is \
-         written beside it rather than into the configured directory"
-    )),
-    mut_arg("config", |a| a.help("Config file. Defaults to ~/.config/paychecker/config.toml"))
+    about = "Paychecker: record paychecks and see where each one goes"
 )]
 struct Cli {
     #[command(flatten)]
@@ -35,7 +26,7 @@ enum Command {
 }
 
 fn main() -> Result<()> {
-    let cli = Cli::parse();
+    let cli: Cli = jluszcz_finance_utils::cli::parse(BACKUP.app, db::FILE_NAME, true);
     let config_path = cli.common.config_path(config::APP)?;
     // Before the TUI opens: a config that does not parse should say so on a
     // terminal in its normal mode, not after a session's work. `pc report

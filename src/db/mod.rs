@@ -41,7 +41,7 @@ impl Kind {
 jluszcz_finance_utils::text_enum!(
     Kind,
     "field kind",
-    /// Every kind, in the order the field form's selector cycles them.
+    /// Every kind, in declared order.
     [Income => "income", Deduction => "deduction"]
 );
 

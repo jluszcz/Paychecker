@@ -26,7 +26,7 @@ enum Command {
 }
 
 fn main() -> Result<()> {
-    let cli: Cli = jluszcz_finance_utils::cli::parse(BACKUP.app, db::FILE_NAME, true);
+    let cli: Cli = jluszcz_finance_utils::cli::parse(config::APP, db::FILE_NAME, true);
     let config_path = cli.common.config_path(config::APP)?;
     // Before the TUI opens: a config that does not parse should say so on a
     // terminal in its normal mode, not after a session's work. `pc report

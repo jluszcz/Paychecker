@@ -9,14 +9,12 @@ use crate::calc;
 use crate::db::{Db, Field, FieldId, Paycheck, PaycheckId};
 use anyhow::Result;
 use chrono::{Datelike, NaiveDate};
+use jluszcz_finance_utils::tui::status::StatusLine;
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Paragraph};
-use std::time::{Duration, Instant};
-
-pub(super) const STATUS_TTL: Duration = Duration::from_secs(4);
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(super) enum Screen {
@@ -32,13 +30,6 @@ pub(super) enum Modal {
     DeleteField(FieldId),
 }
 
-#[derive(Debug)]
-pub(super) struct Status {
-    pub(super) text: String,
-    pub(super) error: bool,
-    expires: Option<Instant>,
-}
-
 pub(super) struct App {
     db: Db,
     today: NaiveDate,
@@ -47,10 +38,7 @@ pub(super) struct App {
     pub(super) fields_view: FieldsView,
     pub(super) help: bool,
     pub(super) modal: Option<Modal>,
-    pub(super) status: Option<Status>,
-    /// Whether the key being handled set the status line. Closing a modal
-    /// clears a status message the closing key did not set.
-    status_set: bool,
+    pub(super) status: StatusLine,
     quit: bool,
     pub(super) fields: Vec<Field>,
     /// Every paycheck, oldest first.
@@ -70,8 +58,7 @@ impl App {
             fields_view: FieldsView::default(),
             help: false,
             modal: None,
-            status: None,
-            status_set: false,
+            status: StatusLine::default(),
             quit: false,
             fields,
             paychecks,
@@ -84,35 +71,12 @@ impl App {
         self.db
     }
 
-    /// Drop a status message whose time is up, and say whether one went.
-    pub(super) fn expire_status_at(&mut self, now: Instant) -> bool {
-        let expired = self
-            .status
-            .as_ref()
-            .and_then(|s| s.expires)
-            .is_some_and(|at| now >= at);
-        if expired {
-            self.status = None;
-        }
-        expired
-    }
-
     fn info(&mut self, text: String) {
-        self.set_status(text, false);
+        self.status.info(text, self.modal.is_some());
     }
 
     fn error(&mut self, text: String) {
-        self.set_status(text, true);
-    }
-
-    fn set_status(&mut self, text: String, error: bool) {
-        let expires = self.modal.is_none().then(|| Instant::now() + STATUS_TTL);
-        self.status = Some(Status {
-            text,
-            error,
-            expires,
-        });
-        self.status_set = true;
+        self.status.error(text, self.modal.is_some());
     }
 
     fn dispatch(&mut self, key: KeyEvent) -> Result<()> {
@@ -365,7 +329,7 @@ impl App {
     }
 
     fn footer(&self) -> Paragraph<'static> {
-        match &self.status {
+        match self.status.message() {
             Some(s) if s.error => Paragraph::new(s.text.clone()).style(Style::new().fg(Color::Red)),
             Some(s) => Paragraph::new(s.text.clone()),
             None => Paragraph::new(help::footer(&self.footer_tables())),
@@ -408,24 +372,19 @@ impl jluszcz_finance_utils::tui::app::App for App {
     }
 
     /// With no modal open, the status line lasts until the next key or
-    /// `STATUS_TTL`. With one open, it lasts until the modal closes, so an
+    /// `status::TTL`. With one open, it lasts until the modal closes, so an
     /// error stays in view while the form is being fixed.
     fn on_key(&mut self, key: KeyEvent) {
         let had_modal = self.modal.is_some();
-        if !had_modal {
-            self.status = None;
-        }
-        self.status_set = false;
+        self.status.begin_key(had_modal);
         if let Err(e) = self.dispatch(key) {
             self.error(format!("{e:#}"));
         }
-        if had_modal && self.modal.is_none() && !self.status_set {
-            self.status = None;
-        }
+        self.status.end_key(had_modal, self.modal.is_some());
     }
 
     fn expire_status(&mut self) -> bool {
-        self.expire_status_at(Instant::now())
+        self.status.expire()
     }
 
     fn render(&mut self, frame: &mut Frame) {
@@ -466,7 +425,9 @@ mod tests {
         STUB, app_with, ctrl, day, inside, key, press, screen, shift, type_text,
     };
     use jluszcz_finance_utils::tui::app::App as _;
+    use jluszcz_finance_utils::tui::status;
     use ratatui::crossterm::event::KeyCode;
+    use std::time::Instant;
 
     /// One paycheck in 2025 and two in 2026.
     fn standard() -> App {
@@ -595,16 +556,16 @@ mod tests {
         app.info("Hello".to_string());
         assert!(screen(&mut app, 80, 30).ends_with("Hello"));
         press(&mut app, KeyCode::Right);
-        assert!(app.status.is_none());
+        assert!(app.status.message().is_none());
     }
 
     #[test]
     fn a_status_message_expires_after_four_seconds() {
         let mut app = standard();
         app.info("Hello".to_string());
-        assert!(!app.expire_status_at(Instant::now()));
-        assert!(app.expire_status_at(Instant::now() + STATUS_TTL));
-        assert!(app.status.is_none());
+        assert!(!app.status.expire_at(Instant::now()));
+        assert!(app.status.expire_at(Instant::now() + status::TTL));
+        assert!(app.status.message().is_none());
     }
 
     #[test]
@@ -691,10 +652,10 @@ mod tests {
         assert_eq!(app.paychecks.len(), 4);
         assert_eq!((app.sheet.year, app.sheet.selected), (2026, 2));
         assert_eq!(
-            app.status.as_ref().unwrap().text,
+            app.status.message().unwrap().text,
             "Saved the paycheck dated 2026-01-30"
         );
-        assert!(app.expire_status_at(Instant::now() + STATUS_TTL));
+        assert!(app.status.expire_at(Instant::now() + status::TTL));
     }
 
     #[test]
@@ -714,15 +675,15 @@ mod tests {
         type_text(&mut app, "abc");
         press(&mut app, KeyCode::Enter);
         assert!(app.modal.is_some());
-        let status = app.status.as_ref().unwrap();
+        let status = app.status.message().unwrap();
         assert!(status.error);
         assert!(status.text.starts_with("Salary: "), "{}", status.text);
-        assert!(!app.expire_status_at(Instant::now() + STATUS_TTL * 10));
+        assert!(!app.status.expire_at(Instant::now() + status::TTL * 10));
         press(&mut app, KeyCode::Tab);
-        assert!(app.status.is_some());
+        assert!(app.status.message().is_some());
         press(&mut app, KeyCode::Esc);
         assert!(app.modal.is_none());
-        assert!(app.status.is_none());
+        assert!(app.status.message().is_none());
         assert_eq!(app.paychecks.len(), 3);
     }
 
@@ -735,7 +696,7 @@ mod tests {
         press(&mut app, KeyCode::Enter);
         assert!(app.modal.is_some());
         assert_eq!(
-            app.status.as_ref().unwrap().text,
+            app.status.message().unwrap().text,
             "a paycheck dated 2026-01-16 already exists"
         );
     }
@@ -763,19 +724,19 @@ mod tests {
         let mut app = standard();
         press(&mut app, KeyCode::Char('d'));
         assert_eq!(
-            app.status.as_ref().unwrap().text,
+            app.status.message().unwrap().text,
             "Delete the paycheck dated 2026-01-16? y to confirm"
         );
         press(&mut app, KeyCode::Char('n'));
         assert!(app.modal.is_none());
-        assert!(app.status.is_none());
+        assert!(app.status.message().is_none());
         assert_eq!(app.paychecks.len(), 3);
         press(&mut app, KeyCode::Char('d'));
         press(&mut app, KeyCode::Char('y'));
         assert_eq!(app.paychecks.len(), 2);
         assert_eq!(app.sheet.selected, 0);
         assert_eq!(
-            app.status.as_ref().unwrap().text,
+            app.status.message().unwrap().text,
             "Deleted the paycheck dated 2026-01-16"
         );
     }
@@ -835,7 +796,7 @@ mod tests {
         let bonus = app.fields.last().unwrap();
         assert_eq!((bonus.name.as_str(), bonus.kind), ("Bonus", Kind::Income));
         assert_eq!(app.fields_view.selected, 10);
-        assert_eq!(app.status.as_ref().unwrap().text, "Saved Bonus");
+        assert_eq!(app.status.message().unwrap().text, "Saved Bonus");
         press(&mut app, KeyCode::Char('1'));
         press(&mut app, KeyCode::Char('a'));
         assert_eq!(paycheck_form(&app).amounts[1].name, "Bonus");
@@ -847,12 +808,12 @@ mod tests {
         press(&mut app, KeyCode::Char('2'));
         press(&mut app, KeyCode::Char('a'));
         press(&mut app, KeyCode::Enter);
-        assert_eq!(app.status.as_ref().unwrap().text, "a field needs a name");
+        assert_eq!(app.status.message().unwrap().text, "a field needs a name");
         type_text(&mut app, "Medicare");
         press(&mut app, KeyCode::Enter);
         assert!(matches!(app.modal, Some(Modal::Field(_))));
         assert_eq!(
-            app.status.as_ref().unwrap().text,
+            app.status.message().unwrap().text,
             "a field named \"Medicare\" already exists"
         );
     }
@@ -893,11 +854,11 @@ mod tests {
         }
         press(&mut app, KeyCode::Char('x'));
         assert!(app.fields[7].archived);
-        assert_eq!(app.status.as_ref().unwrap().text, "Archived HSA");
+        assert_eq!(app.status.message().unwrap().text, "Archived HSA");
         assert!(screen(&mut app, 80, 30).contains("archived"));
         press(&mut app, KeyCode::Char('x'));
         assert!(!app.fields[7].archived);
-        assert_eq!(app.status.as_ref().unwrap().text, "Unarchived HSA");
+        assert_eq!(app.status.message().unwrap().text, "Unarchived HSA");
     }
 
     #[test]
@@ -906,7 +867,7 @@ mod tests {
         press(&mut app, KeyCode::Char('2'));
         press(&mut app, KeyCode::Char('d'));
         assert!(app.modal.is_none());
-        let status = app.status.as_ref().unwrap();
+        let status = app.status.message().unwrap();
         assert!(status.error);
         assert_eq!(
             status.text,
@@ -922,13 +883,13 @@ mod tests {
         app.fields_view.selected = last;
         press(&mut app, KeyCode::Char('d'));
         assert_eq!(
-            app.status.as_ref().unwrap().text,
+            app.status.message().unwrap().text,
             "Delete 401K (Roth)? y to confirm"
         );
         press(&mut app, KeyCode::Char('y'));
         assert_eq!(app.fields.len(), 9);
         assert_eq!(app.fields_view.selected, 8);
-        assert_eq!(app.status.as_ref().unwrap().text, "Deleted 401K (Roth)");
+        assert_eq!(app.status.message().unwrap().text, "Deleted 401K (Roth)");
     }
 
     #[test]

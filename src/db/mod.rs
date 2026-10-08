@@ -23,13 +23,6 @@ pub enum Kind {
 }
 
 impl Kind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Kind::Income => "income",
-            Kind::Deduction => "deduction",
-        }
-    }
-
     pub fn label(self) -> &'static str {
         match self {
             Kind::Income => "Income",
@@ -43,15 +36,14 @@ impl Kind {
             Kind::Deduction => Kind::Income,
         }
     }
-
-    pub fn from_sql_text(text: &str) -> Option<Kind> {
-        match text {
-            "income" => Some(Kind::Income),
-            "deduction" => Some(Kind::Deduction),
-            _ => None,
-        }
-    }
 }
+
+jluszcz_finance_utils::text_enum!(
+    Kind,
+    "field kind",
+    /// Every kind, in the order the field form's selector cycles them.
+    [Income => "income", Deduction => "deduction"]
+);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Field {
@@ -171,10 +163,10 @@ mod tests {
 
     #[test]
     fn kinds_round_trip_through_their_sql_text() {
-        for kind in [Kind::Income, Kind::Deduction] {
-            assert_eq!(Kind::from_sql_text(kind.as_str()), Some(kind));
+        for kind in Kind::ALL {
+            assert_eq!(kind.as_str().parse::<Kind>().unwrap(), kind);
         }
-        assert_eq!(Kind::from_sql_text("bonus"), None);
+        assert!("bonus".parse::<Kind>().is_err());
     }
 
     #[test]

@@ -106,14 +106,12 @@ fn checked_name(conn: &Connection, name: &str, except: Option<FieldId>) -> Resul
 }
 
 fn field_from_row(row: &Row) -> rusqlite::Result<Field> {
-    let kind: String = row.get(2)?;
-    let kind = Kind::from_sql_text(&kind).ok_or_else(|| {
-        rusqlite::Error::FromSqlConversionFailure(
-            2,
-            rusqlite::types::Type::Text,
-            format!("unknown field kind {kind:?}").into(),
-        )
-    })?;
+    let kind: Kind = row
+        .get::<_, String>(2)?
+        .parse()
+        .map_err(|e: anyhow::Error| {
+            rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, e.into())
+        })?;
     Ok(Field {
         id: row.get(0)?,
         name: row.get(1)?,

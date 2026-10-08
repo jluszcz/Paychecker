@@ -4,6 +4,7 @@ use super::app::App;
 use crate::db::{self, Field, FieldId, Paycheck, PaycheckId};
 use crate::money::Cents;
 use chrono::NaiveDate;
+use jluszcz_finance_utils::tui::app::App as _;
 pub(super) use jluszcz_finance_utils::tui::testing::{
     buffer_text, ctrl, draw, draw_buffer, key, shift,
 };

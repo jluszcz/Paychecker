@@ -80,33 +80,8 @@ impl App {
         Ok(app)
     }
 
-    pub(super) fn should_quit(&self) -> bool {
-        self.quit
-    }
-
     pub(super) fn into_db(self) -> Db {
         self.db
-    }
-
-    /// With no modal open, the status line lasts until the next key or
-    /// `STATUS_TTL`. With one open, it lasts until the modal closes, so an
-    /// error stays in view while the form is being fixed.
-    pub(super) fn on_key(&mut self, key: KeyEvent) {
-        let had_modal = self.modal.is_some();
-        if !had_modal {
-            self.status = None;
-        }
-        self.status_set = false;
-        if let Err(e) = self.dispatch(key) {
-            self.error(format!("{e:#}"));
-        }
-        if had_modal && self.modal.is_none() && !self.status_set {
-            self.status = None;
-        }
-    }
-
-    pub(super) fn expire_status(&mut self) -> bool {
-        self.expire_status_at(Instant::now())
     }
 
     /// Drop a status message whose time is up, and say whether one went.
@@ -380,30 +355,6 @@ impl App {
         self.select_last_in_year();
     }
 
-    pub(super) fn render(&mut self, frame: &mut Frame) {
-        let [body, footer] =
-            Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
-        let block = Block::bordered().title(self.title());
-        let inner = block.inner(body);
-        frame.render_widget(block, body);
-        match self.screen {
-            Screen::Sheet => {
-                let data = calc::sheet(self.sheet.year, &self.fields, &self.paychecks);
-                sheet::render(frame, inner, &mut self.sheet, &data);
-            }
-            Screen::Fields => fields::render(frame, inner, &self.fields_view, &self.fields),
-        }
-        match &self.modal {
-            Some(Modal::Paycheck(form)) => form::render_paycheck(frame, body, form),
-            Some(Modal::Field(form)) => form::render_field(frame, body, form),
-            _ => {}
-        }
-        if self.help {
-            help::render(frame, body, &self.help_topics());
-        }
-        frame.render_widget(self.footer(), footer);
-    }
-
     /// The year the Sheet shows. Fields belong to no year, so their border
     /// is bare.
     fn title(&self) -> String {
@@ -451,6 +402,57 @@ impl App {
     }
 }
 
+impl jluszcz_finance_utils::tui::app::App for App {
+    fn should_quit(&self) -> bool {
+        self.quit
+    }
+
+    /// With no modal open, the status line lasts until the next key or
+    /// `STATUS_TTL`. With one open, it lasts until the modal closes, so an
+    /// error stays in view while the form is being fixed.
+    fn on_key(&mut self, key: KeyEvent) {
+        let had_modal = self.modal.is_some();
+        if !had_modal {
+            self.status = None;
+        }
+        self.status_set = false;
+        if let Err(e) = self.dispatch(key) {
+            self.error(format!("{e:#}"));
+        }
+        if had_modal && self.modal.is_none() && !self.status_set {
+            self.status = None;
+        }
+    }
+
+    fn expire_status(&mut self) -> bool {
+        self.expire_status_at(Instant::now())
+    }
+
+    fn render(&mut self, frame: &mut Frame) {
+        let [body, footer] =
+            Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
+        let block = Block::bordered().title(self.title());
+        let inner = block.inner(body);
+        frame.render_widget(block, body);
+        match self.screen {
+            Screen::Sheet => {
+                let data = calc::sheet(self.sheet.year, &self.fields, &self.paychecks);
+                sheet::render(frame, inner, &mut self.sheet, &data);
+            }
+            Screen::Fields => fields::render(frame, inner, &self.fields_view, &self.fields),
+        }
+        match &self.modal {
+            Some(Modal::Paycheck(form)) => form::render_paycheck(frame, body, form),
+            Some(Modal::Field(form)) => form::render_field(frame, body, form),
+            _ => {}
+        }
+        if self.help {
+            help::render(frame, body, &self.help_topics());
+        }
+        frame.render_widget(self.footer(), footer);
+    }
+}
+
 fn is_yes(key: KeyEvent) -> bool {
     key.code == KeyCode::Char('y') && is_bare(key)
 }
@@ -463,6 +465,7 @@ mod tests {
     use crate::tui::test_support::{
         STUB, app_with, ctrl, day, inside, key, press, screen, shift, type_text,
     };
+    use jluszcz_finance_utils::tui::app::App as _;
     use ratatui::crossterm::event::KeyCode;
 
     /// One paycheck in 2025 and two in 2026.

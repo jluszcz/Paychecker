@@ -46,3 +46,17 @@ fn backing_up_a_database_path_that_does_not_exist_creates_nothing() {
     assert!(!dir.join("state").exists());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn the_help_names_the_default_database_and_config_paths() {
+    let output = Command::new(env!("CARGO_BIN_EXE_pc"))
+        .arg("--help")
+        .output()
+        .unwrap();
+    let help = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        help.contains("~/.local/share/paychecker/paychecks.db"),
+        "{help}"
+    );
+    assert!(help.contains("~/.config/paychecker/config.toml"), "{help}");
+}

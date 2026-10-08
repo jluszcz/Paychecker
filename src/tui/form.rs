@@ -6,54 +6,15 @@ use crate::calc::{self, Totals};
 use crate::db::{Field, FieldId, Kind, Paycheck, PaycheckId};
 use crate::money::Cents;
 use anyhow::{Context, Result};
-use chrono::{Months, NaiveDate, TimeDelta};
+use chrono::NaiveDate;
+use jluszcz_finance_utils::tui::date::Step;
 pub(super) use jluszcz_finance_utils::tui::date::iso;
-use jluszcz_finance_utils::tui::date::parse_shorthand;
+pub(super) use jluszcz_finance_utils::tui::date::parse as parse_date;
 use ratatui::Frame;
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::Rect;
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Clear, Paragraph};
-
-/// `YYYY-MM-DD`, or MisterManager's `M/D` shorthand.
-pub(super) fn parse_date(raw: &str, today: NaiveDate) -> Result<NaiveDate> {
-    let raw = raw.trim();
-    if raw.contains('/') {
-        return parse_shorthand(raw, today);
-    }
-    NaiveDate::parse_from_str(raw, "%Y-%m-%d")
-        .with_context(|| format!("not a YYYY-MM-DD or M/D date: {raw:?}"))
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(super) enum Step {
-    Days(i64),
-    /// A month's step clamps the day to the end of a shorter month.
-    Months(i32),
-}
-
-pub(super) fn step_date(date: NaiveDate, step: Step) -> Option<NaiveDate> {
-    match step {
-        Step::Days(n) => date.checked_add_signed(TimeDelta::days(n)),
-        Step::Months(n) if n >= 0 => date.checked_add_months(Months::new(n.unsigned_abs())),
-        Step::Months(n) => date.checked_sub_months(Months::new(n.unsigned_abs())),
-    }
-}
-
-/// The date keys: `←`/`→` a day, with `Shift` a week, and `[`/`]` a month.
-fn date_step(key: KeyEvent) -> Option<Step> {
-    if !is_bare(key) {
-        return None;
-    }
-    let week = key.modifiers.contains(KeyModifiers::SHIFT);
-    match key.code {
-        KeyCode::Left => Some(Step::Days(if week { -7 } else { -1 })),
-        KeyCode::Right => Some(Step::Days(if week { 7 } else { 1 })),
-        KeyCode::Char('[') => Some(Step::Months(-1)),
-        KeyCode::Char(']') => Some(Step::Months(1)),
-        _ => None,
-    }
-}
 
 /// A blank amount is zero.
 fn parse_amount(raw: &str) -> Result<Cents> {
@@ -102,7 +63,7 @@ impl PaycheckForm {
     /// The active fields, prefilled from `latest`, dated two weeks after it.
     pub(super) fn add(fields: &[Field], latest: Option<&Paycheck>, today: NaiveDate) -> Self {
         let date = latest
-            .and_then(|p| step_date(p.date, Step::Days(14)))
+            .and_then(|p| Step::days(14).apply(p.date))
             .unwrap_or(today);
         let mut shown: Vec<&Field> = fields.iter().filter(|f| !f.archived).collect();
         calc::sort_rows(&mut shown);
@@ -158,7 +119,7 @@ impl PaycheckForm {
             _ => {}
         }
         if self.focus == 0 {
-            match date_step(key) {
+            match Step::from_key(key) {
                 Some(step) => self.step(step),
                 None => {
                     edit_key(&mut self.date, key);
@@ -203,7 +164,7 @@ impl PaycheckForm {
 
     fn step(&mut self, step: Step) {
         if let Ok(date) = parse_date(self.date.value(), self.today)
-            && let Some(next) = step_date(date, step)
+            && let Some(next) = step.apply(date)
         {
             self.date.set(iso(next));
         }
@@ -383,6 +344,7 @@ mod tests {
     use super::*;
     use crate::db;
     use crate::tui::test_support::{STUB, ctrl, day, key, paycheck, shift};
+    use ratatui::crossterm::event::KeyModifiers;
 
     fn today() -> NaiveDate {
         day(2026, 1, 20)
@@ -429,11 +391,11 @@ mod tests {
     #[test]
     fn stepping_a_month_clamps_the_day() {
         assert_eq!(
-            step_date(day(2026, 1, 31), Step::Months(1)),
+            Step::NEXT_MONTH.apply(day(2026, 1, 31)),
             Some(day(2026, 2, 28))
         );
         assert_eq!(
-            step_date(day(2026, 3, 31), Step::Months(-1)),
+            Step::PREVIOUS_MONTH.apply(day(2026, 3, 31)),
             Some(day(2026, 2, 28))
         );
     }
@@ -518,6 +480,23 @@ mod tests {
         assert_eq!(form.date.value(), "2026-01-21");
         form.on_key(shift(KeyCode::Left));
         assert_eq!(form.date.value(), "2026-01-14");
+    }
+
+    #[test]
+    fn ctrl_with_an_arrow_on_the_date_steps_nothing() {
+        let fields = fields();
+        let mut form = PaycheckForm::add(&fields, None, today());
+        let before = form.date.value().to_string();
+        form.on_key(KeyEvent::new(KeyCode::Right, KeyModifiers::CONTROL));
+        assert_eq!(form.date.value(), before);
+    }
+
+    #[test]
+    fn adding_after_a_paycheck_at_a_month_end_prefills_into_the_next_month() {
+        let fields = fields();
+        let latest = paycheck(1, day(2028, 2, 20), &fields, STUB);
+        let form = PaycheckForm::add(&fields, Some(&latest), today());
+        assert_eq!(form.date.value(), "2028-03-05");
     }
 
     #[test]

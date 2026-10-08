@@ -1,23 +1,16 @@
 //! What every key does. The footers are joined from these same tables, so a
 //! footer cannot drift from the panel that explains it.
 
-use super::centered;
-use ratatui::Frame;
-use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
-use ratatui::text::Line;
-use ratatui::widgets::{Block, Clear, Paragraph};
+pub(super) use jluszcz_finance_utils::tui::help::Entry;
+use jluszcz_finance_utils::tui::help::footer_items;
+pub(super) use jluszcz_finance_utils::tui::help::render_panel as render;
 
-#[derive(Copy, Clone, Debug)]
-pub(super) struct Entry {
-    pub(super) key: &'static str,
-    /// The footer word; `None` keeps the key out of the footer but in the panel.
-    pub(super) word: Option<&'static str>,
-    pub(super) detail: &'static str,
-}
-
+/// `Some(word)` puts the key in the footer; `None` keeps it in the panel only.
 const fn entry(key: &'static str, word: Option<&'static str>, detail: &'static str) -> Entry {
-    Entry { key, word, detail }
+    match word {
+        Some(word) => Entry::own(key, word, detail),
+        None => Entry::hidden(key, detail),
+    }
 }
 
 pub(super) const GLOBAL: &[Entry] = &[
@@ -108,47 +101,14 @@ pub(super) const HELP: &[Entry] = &[entry(
 )];
 
 pub(super) fn footer(tables: &[&[Entry]]) -> String {
-    tables
-        .iter()
-        .flat_map(|table| table.iter())
-        .filter_map(|e| e.word.map(|w| format!("{} {w}", e.key)))
-        .collect::<Vec<_>>()
-        .join("  ")
-}
-
-pub(super) fn render(frame: &mut Frame, area: Rect, topics: &[(&str, &[Entry])]) {
-    let key_w = topics
-        .iter()
-        .flat_map(|(_, entries)| entries.iter())
-        .map(|e| e.key.chars().count())
-        .max()
-        .unwrap_or(0);
-    let mut lines: Vec<Line> = Vec::new();
-    for (title, entries) in topics {
-        if !lines.is_empty() {
-            lines.push(Line::default());
-        }
-        lines.push(Line::styled(
-            title.to_string(),
-            Style::new().add_modifier(Modifier::BOLD),
-        ));
-        for e in *entries {
-            lines.push(Line::from(format!("  {:<key_w$}  {}", e.key, e.detail)));
-        }
-    }
-    let width = lines.iter().map(Line::width).max().unwrap_or(0) as u16 + 2;
-    let popup = centered(area, width, lines.len() as u16 + 2);
-    frame.render_widget(Clear, popup);
-    frame.render_widget(
-        Paragraph::new(lines).block(Block::bordered().title(" Help ")),
-        popup,
-    );
+    footer_items(tables).join("  ")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::tui::test_support::draw;
+    use jluszcz_finance_utils::tui::help::{Label, duplicate_keys};
 
     const ALL: &[&[Entry]] = &[
         GLOBAL,
@@ -171,10 +131,11 @@ mod tests {
     #[test]
     fn no_table_names_a_key_twice() {
         for table in ALL {
-            let mut keys: Vec<_> = table.iter().map(|e| e.key).collect();
-            keys.sort_unstable();
-            keys.dedup();
-            assert_eq!(keys.len(), table.len());
+            assert!(
+                duplicate_keys(table).is_empty(),
+                "{:?}",
+                duplicate_keys(table)
+            );
         }
     }
 
@@ -183,7 +144,7 @@ mod tests {
         for (key, word) in [("a", "add"), ("e", "edit"), ("d", "delete")] {
             for table in [SHEET, FIELDS] {
                 let entry = table.iter().find(|e| e.key == key).unwrap();
-                assert_eq!(entry.word, Some(word));
+                assert_eq!(entry.label, Label::Own(word));
             }
         }
     }

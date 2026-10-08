@@ -10,7 +10,7 @@
 use anyhow::Result;
 use jluszcz_finance_utils::config::{self as shared, BackupConfig, ReportConfig};
 use serde::Deserialize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 pub const APP: &str = "paychecker";
 
@@ -30,12 +30,6 @@ impl Config {
     }
 }
 
-/// `$XDG_CONFIG_HOME/paychecker/config.toml`, or `~/.config` when it is unset
-/// or empty.
-pub fn default_path() -> Result<PathBuf> {
-    shared::default_path(APP)
-}
-
 pub fn load(path: &Path) -> Result<Config> {
     shared::load(path)
 }
@@ -43,6 +37,7 @@ pub fn load(path: &Path) -> Result<Config> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     /// Writes `body` to a temp file named for the test, since the tests run in
     /// one process at once and a shared name would have them reading each

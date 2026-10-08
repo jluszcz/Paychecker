@@ -21,7 +21,7 @@ impl Db {
              VALUES (?1, ?2, (SELECT COALESCE(MAX(position), -1) + 1 FROM field))",
             params![name, kind.as_str()],
         )?;
-        Ok(self.conn.last_insert_rowid())
+        Ok(FieldId(self.conn.last_insert_rowid()))
     }
 
     pub fn update_field(&self, id: FieldId, name: &str, kind: Kind) -> Result<()> {

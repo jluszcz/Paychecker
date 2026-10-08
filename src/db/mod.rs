@@ -13,8 +13,8 @@ use rusqlite::Connection;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-pub type FieldId = i64;
-pub type PaycheckId = i64;
+jluszcz_finance_utils::row_id!(FieldId, "field");
+jluszcz_finance_utils::row_id!(PaycheckId, "paycheck");
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Kind {

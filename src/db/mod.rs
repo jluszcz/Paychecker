@@ -7,7 +7,9 @@ mod paycheck;
 use crate::money::Cents;
 use anyhow::{Context, Result};
 use chrono::NaiveDate;
-use rusqlite::{Connection, OpenFlags};
+use jluszcz_finance_utils::sqlite;
+pub use jluszcz_finance_utils::sqlite::snapshot;
+use rusqlite::Connection;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -107,44 +109,15 @@ pub fn default_path() -> Result<PathBuf> {
 /// Open (creating if needed) the database at `path`, creating its parent
 /// directory if missing, and bring it up to this build's schema.
 pub fn open(path: &Path) -> Result<Db> {
-    if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
-        std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
-    }
-    let conn = Connection::open(path)
-        .with_context(|| format!("opening database at {}", path.display()))?;
-    prepare(&conn).with_context(|| format!("preparing database at {}", path.display()))?;
-    Ok(Db { conn })
+    Ok(Db {
+        conn: sqlite::open(path, &migration::SCHEMA)?,
+    })
 }
 
 pub fn open_in_memory() -> Result<Db> {
-    let conn = Connection::open_in_memory()?;
-    prepare(&conn)?;
-    Ok(Db { conn })
-}
-
-/// Copy the database at `src` to `dest`, which must not exist yet.
-/// `VACUUM INTO` reads one consistent snapshot, WAL included, while another
-/// connection has the file open. `src` is opened without the create flag, so
-/// a wrong path is an error rather than an empty database copied as though it
-/// were the real one.
-pub fn snapshot(src: &Path, dest: &Path) -> Result<()> {
-    let dest = dest
-        .to_str()
-        .with_context(|| format!("{} is not valid UTF-8", dest.display()))?;
-    let conn = Connection::open_with_flags(
-        src,
-        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )
-    .with_context(|| format!("opening database at {}", src.display()))?;
-    conn.execute("VACUUM INTO ?1", [dest])
-        .with_context(|| format!("snapshotting to {dest}"))?;
-    Ok(())
-}
-
-fn prepare(conn: &Connection) -> Result<()> {
-    conn.pragma_update(None, "foreign_keys", "ON")?;
-    conn.execute_batch("PRAGMA journal_mode=WAL;")?;
-    migration::run(conn)
+    Ok(Db {
+        conn: sqlite::open_in_memory(&migration::SCHEMA)?,
+    })
 }
 
 #[cfg(test)]
@@ -175,15 +148,6 @@ mod tests {
             .query_row("PRAGMA foreign_keys", [], |r| r.get(0))
             .unwrap();
         assert!(on);
-    }
-
-    #[test]
-    fn opening_a_file_creates_its_parent_directory() {
-        let dir = scratch_dir("parent");
-        let path = dir.join("nested").join("paychecks.db");
-        open(&path).unwrap();
-        assert!(path.exists());
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -264,17 +228,6 @@ mod tests {
         assert_eq!(paychecks[0].date, date);
         assert_eq!(paychecks[0].amounts.get(&salary), Some(&Cents(400_000)));
         drop(db);
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn snapshotting_a_path_with_no_database_is_an_error_rather_than_an_empty_backup() {
-        let dir = scratch_dir("snapshot_missing");
-        std::fs::create_dir_all(&dir).unwrap();
-        let absent = dir.join("absent.db");
-
-        assert!(snapshot(&absent, &dir.join("copy.db")).is_err());
-        assert!(!absent.exists());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

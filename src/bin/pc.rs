@@ -46,18 +46,12 @@ fn main() -> Result<()> {
         _ => config::load(&config_path)?,
     };
     let is_explicit_backup = matches!(cli.command, Some(Command::Backup(_)));
-    // Refused before the copy is made: a throwaway copy has nothing worth
-    // restoring, and an upload of one would sit in the bucket beside the real
-    // backups looking like one.
-    if cli.common.scratch && is_explicit_backup {
-        anyhow::bail!("--scratch cannot be backed up: drop the flag to back up the real database");
+    if is_explicit_backup {
+        cli.common.refuse_scratch_backup()?;
     }
     // A run pointed at another database or another day is a scratch session;
     // see `report::write_if_enabled`.
     let scratch = cli.common.is_scratch_session();
-    // The schedule belongs to the default database only, and a `--scratch`
-    // copy is no more it than a `--db` is.
-    let is_default_db = cli.common.is_default_db();
     // `db::snapshot` opens nothing through `db::open`, so a scratch copy keeps
     // the schema version the original has and this run is the one that
     // migrates it.
@@ -107,11 +101,9 @@ fn main() -> Result<()> {
         }
     }
 
-    // The state file records when an upload last happened, not what was
-    // uploaded, so a `--db` copy on the schedule would take the real
-    // database's turn. An explicit `pc backup` uploads whatever it is given.
-    if !is_explicit_backup && is_default_db {
-        backup::scheduled(&BACKUP, &path, cfg.backup.as_ref(), db::snapshot);
+    if !is_explicit_backup {
+        cli.common
+            .scheduled_backup(&BACKUP, &path, cfg.backup.as_ref(), db::snapshot);
     }
     Ok(())
 }

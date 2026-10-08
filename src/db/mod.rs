@@ -5,7 +5,7 @@ mod migration;
 mod paycheck;
 
 use crate::money::Cents;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::NaiveDate;
 use jluszcz_finance_utils::sqlite;
 pub use jluszcz_finance_utils::sqlite::snapshot;
@@ -102,8 +102,7 @@ impl Db {
 
 /// `~/.local/share/paychecker/paychecks.db`.
 pub fn default_path() -> Result<PathBuf> {
-    let home = std::env::var_os("HOME").context("HOME is not set")?;
-    Ok(PathBuf::from(home).join(".local/share/paychecker/paychecks.db"))
+    jluszcz_finance_utils::config::data_path(crate::config::APP, "paychecks.db")
 }
 
 /// Open (creating if needed) the database at `path`, creating its parent

@@ -97,11 +97,8 @@ fn write_amounts(conn: &Connection, id: PaycheckId, amounts: &[(FieldId, Cents)]
 mod tests {
     use crate::db::{Db, FieldId, open_in_memory};
     use crate::money::Cents;
-    use chrono::NaiveDate;
 
-    fn day(y: i32, m: u32, d: u32) -> NaiveDate {
-        NaiveDate::from_ymd_opt(y, m, d).unwrap()
-    }
+    use jluszcz_finance_utils::testing::day;
 
     fn stub(db: &Db) -> Vec<(FieldId, Cents)> {
         vec![

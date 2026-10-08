@@ -6,9 +6,7 @@ use crate::db::{self, Db};
 use crate::money::Cents;
 use chrono::{Local, NaiveDate, TimeZone};
 
-pub(super) fn day(y: i32, m: u32, d: u32) -> NaiveDate {
-    NaiveDate::from_ymd_opt(y, m, d).unwrap()
-}
+pub(super) use jluszcz_finance_utils::testing::day;
 
 /// An in-memory database with one paycheck on each of `dates`: a 4,000.00
 /// salary less 600.00 federal tax.

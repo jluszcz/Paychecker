@@ -11,6 +11,7 @@ use crate::calc::{self, Sheet};
 use crate::money::Cents;
 use chrono::Datelike;
 use jluszcz_finance_utils::report::escape;
+use jluszcz_finance_utils::report::html::{self as shared, Tab};
 
 /// A year's radio id. The `y` is there because a CSS id selector cannot
 /// start with a digit, and `#2026` would match nothing.
@@ -26,46 +27,26 @@ fn opening_year(snapshot: &Snapshot) -> Option<i32> {
     years().find(|&y| y == this_year).or_else(|| years().next())
 }
 
-/// The tab bar, and the radios that drive it. Every radio sits ahead of the
-/// nav and every panel, because `:checked ~` only looks forward.
-fn tab_bar(snapshot: &Snapshot) -> String {
-    let open = opening_year(snapshot);
-    let inputs: String = snapshot
-        .sheets
-        .iter()
-        .map(|s| {
-            let checked = if Some(s.year) == open { " checked" } else { "" };
-            format!(
-                "<input class=\"tab\" type=\"radio\" name=\"tab\" id=\"{}\"{checked}>",
-                tab_id(s.year)
-            )
-        })
-        .collect();
-    let labels: String = snapshot
-        .sheets
-        .iter()
-        .map(|s| format!("<label for=\"{}\">{}</label>", tab_id(s.year), s.year))
-        .collect();
-    format!("{inputs}<nav>{labels}</nav>")
-}
-
-/// Which panel shows, which label is lit, and where the focus ring goes: one
-/// rule set per year, generated from the same list as the markup.
-fn tab_rules(snapshot: &Snapshot) -> String {
+/// One tab per year, newest first, as the sheets are.
+fn tabs(snapshot: &Snapshot) -> Vec<Tab> {
     snapshot
         .sheets
         .iter()
-        .map(|s| {
-            let id = tab_id(s.year);
-            format!(
-                "#{id}:checked~nav label[for={id}]\
-                 {{color:inherit;border-bottom-color:currentColor}}\
-                 #{id}:focus-visible~nav label[for={id}]\
-                 {{outline:2px solid currentColor;outline-offset:-2px}}\
-                 #{id}:checked~#{id}-panel{{display:block}}"
-            )
-        })
+        .map(|s| Tab::new(tab_id(s.year), s.year.to_string()))
         .collect()
+}
+
+/// The tab bar, and the radios that drive it. Every radio sits ahead of the
+/// nav and every panel, because `:checked ~` only looks forward.
+fn tab_bar(snapshot: &Snapshot) -> String {
+    let tabs = tabs(snapshot);
+    let open =
+        opening_year(snapshot).and_then(|year| snapshot.sheets.iter().position(|s| s.year == year));
+    format!(
+        "{}{}",
+        shared::tab_inputs(&tabs, open),
+        shared::tab_nav(&tabs)
+    )
 }
 
 /// An amount with its cents in a span of their own, which a phone's rules
@@ -215,16 +196,11 @@ pub fn page(snapshot: &Snapshot) -> String {
             .collect();
         format!("{}{panels}", tab_bar(snapshot))
     };
-    format!(
-        "<!DOCTYPE html>\n<html lang=\"en\"><head>\
-         <meta charset=\"utf-8\">\
-         <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
-         <title>Paychecks</title><style>{STYLE}{}</style></head><body>\
-         {body}\
-         <footer><p class=\"stamp\">Written {}</p></footer>\
-         </body></html>",
-        tab_rules(snapshot),
-        snapshot.generated_at.format(STAMP_FORMAT),
+    shared::page(
+        "Paychecks",
+        &format!("{STYLE}{}", shared::tab_rules(&tabs(snapshot))),
+        &body,
+        &format!("Written {}", snapshot.generated_at.format(STAMP_FORMAT)),
     )
 }
 

@@ -13,8 +13,8 @@ use rusqlite::Connection;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-pub type FieldId = i64;
-pub type PaycheckId = i64;
+jluszcz_finance_utils::row_id!(FieldId, "field");
+jluszcz_finance_utils::row_id!(PaycheckId, "paycheck");
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -23,13 +23,6 @@ pub enum Kind {
 }
 
 impl Kind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Kind::Income => "income",
-            Kind::Deduction => "deduction",
-        }
-    }
-
     pub fn label(self) -> &'static str {
         match self {
             Kind::Income => "Income",
@@ -43,15 +36,14 @@ impl Kind {
             Kind::Deduction => Kind::Income,
         }
     }
-
-    pub fn from_sql_text(text: &str) -> Option<Kind> {
-        match text {
-            "income" => Some(Kind::Income),
-            "deduction" => Some(Kind::Deduction),
-            _ => None,
-        }
-    }
 }
+
+jluszcz_finance_utils::text_enum!(
+    Kind,
+    "field kind",
+    /// Every kind, in declared order.
+    [Income => "income", Deduction => "deduction"]
+);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Field {
@@ -100,9 +92,12 @@ impl Db {
     }
 }
 
+/// The database's file name under the data directory.
+pub const FILE_NAME: &str = "paychecks.db";
+
 /// `~/.local/share/paychecker/paychecks.db`.
 pub fn default_path() -> Result<PathBuf> {
-    jluszcz_finance_utils::config::data_path(crate::config::APP, "paychecks.db")
+    jluszcz_finance_utils::config::data_path(crate::config::APP, FILE_NAME)
 }
 
 /// Open (creating if needed) the database at `path`, creating its parent
@@ -168,10 +163,10 @@ mod tests {
 
     #[test]
     fn kinds_round_trip_through_their_sql_text() {
-        for kind in [Kind::Income, Kind::Deduction] {
-            assert_eq!(Kind::from_sql_text(kind.as_str()), Some(kind));
+        for kind in Kind::ALL {
+            assert_eq!(kind.as_str().parse::<Kind>().unwrap(), kind);
         }
-        assert_eq!(Kind::from_sql_text("bonus"), None);
+        assert!("bonus".parse::<Kind>().is_err());
     }
 
     #[test]

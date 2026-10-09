@@ -148,7 +148,7 @@ pub(super) fn render(frame: &mut Frame, area: Rect, view: &mut SheetView, sheet:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::{self, Field, Paycheck};
+    use crate::db::{self, Field, Paycheck, PaycheckId};
     use crate::tui::test_support::{day, draw, draw_buffer, paycheck};
 
     const PAY: &[(&str, i64)] = &[("Salary", 400_000), ("Federal Tax", 60_000)];
@@ -164,7 +164,7 @@ mod tests {
         dates
             .iter()
             .enumerate()
-            .map(|(i, &(m, d))| paycheck(i as i64 + 1, day(2026, m, d), fields, PAY))
+            .map(|(i, &(m, d))| paycheck(PaycheckId(i as i64 + 1), day(2026, m, d), fields, PAY))
             .collect()
     }
 

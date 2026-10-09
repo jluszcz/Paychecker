@@ -10,6 +10,7 @@ use chrono::NaiveDate;
 use jluszcz_finance_utils::tui::date::Step;
 pub(super) use jluszcz_finance_utils::tui::date::iso;
 pub(super) use jluszcz_finance_utils::tui::date::parse as parse_date;
+use jluszcz_finance_utils::tui::{date, step_index};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::Rect;
@@ -163,10 +164,8 @@ impl PaycheckForm {
     }
 
     fn step(&mut self, step: Step) {
-        if let Ok(date) = parse_date(self.date.value(), self.today)
-            && let Some(next) = step.apply(date)
-        {
-            self.date.set(iso(next));
+        if let Some(next) = date::stepped(self.date.value(), self.today, step) {
+            self.date.set(next);
         }
     }
 
@@ -174,14 +173,13 @@ impl PaycheckForm {
         if self.focus == 0 {
             self.normalize_date();
         }
-        let stops = (self.amounts.len() + 1) as isize;
-        self.focus = (self.focus as isize + by).rem_euclid(stops) as usize;
+        self.focus = step_index(self.focus, self.amounts.len() + 1, by);
     }
 
     /// Show the date in ISO form once it parses; leave text that does not.
     fn normalize_date(&mut self) {
-        if let Ok(date) = parse_date(self.date.value(), self.today) {
-            self.date.set(iso(date));
+        if let Some(text) = date::normalized(self.date.value(), self.today) {
+            self.date.set(text);
         }
     }
 }
@@ -355,7 +353,7 @@ mod tests {
     }
 
     fn latest(fields: &[Field]) -> Paycheck {
-        paycheck(1, day(2026, 1, 16), fields, STUB)
+        paycheck(PaycheckId(1), day(2026, 1, 16), fields, STUB)
     }
 
     fn type_into(form: &mut PaycheckForm, text: &str) {
@@ -421,7 +419,7 @@ mod tests {
     fn adding_prefills_active_fields_from_the_latest_paycheck_and_leaves_the_rest_blank() {
         let mut fields = fields();
         let latest = paycheck(
-            1,
+            PaycheckId(1),
             day(2026, 1, 16),
             &fields,
             &[("Salary", 400_000), ("HSA", 10_000)],
@@ -443,7 +441,7 @@ mod tests {
     fn editing_shows_an_archived_field_the_paycheck_used_and_active_fields_it_lacks() {
         let mut fields = fields();
         let check = paycheck(
-            7,
+            PaycheckId(7),
             day(2026, 1, 16),
             &fields,
             &[("Salary", 400_000), ("HSA", 10_000)],
@@ -454,7 +452,7 @@ mod tests {
             .unwrap()
             .archived = true;
         let form = PaycheckForm::edit(&fields, &check, today());
-        assert_eq!(form.editing, Some(7));
+        assert_eq!(form.editing, Some(PaycheckId(7)));
         assert_eq!(form.date.value(), "2026-01-16");
         assert_eq!(amount(&form, "HSA"), "100.00");
         assert_eq!(amount(&form, "Medicare"), "");
@@ -494,7 +492,7 @@ mod tests {
     #[test]
     fn adding_after_a_paycheck_at_a_month_end_prefills_into_the_next_month() {
         let fields = fields();
-        let latest = paycheck(1, day(2028, 2, 20), &fields, STUB);
+        let latest = paycheck(PaycheckId(1), day(2028, 2, 20), &fields, STUB);
         let form = PaycheckForm::add(&fields, Some(&latest), today());
         assert_eq!(form.date.value(), "2028-03-05");
     }

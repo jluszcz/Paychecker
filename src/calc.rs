@@ -211,10 +211,10 @@ mod tests {
     /// after Tax by position but before it by kind.
     fn fields() -> Vec<Field> {
         vec![
-            field(1, "Salary", Kind::Income, 0, false),
-            field(2, "Tax", Kind::Deduction, 1, false),
-            field(3, "Bonus", Kind::Income, 2, false),
-            field(4, "Retirement", Kind::Deduction, 3, false),
+            field(FieldId(1), "Salary", Kind::Income, 0, false),
+            field(FieldId(2), "Tax", Kind::Deduction, 1, false),
+            field(FieldId(3), "Bonus", Kind::Income, 2, false),
+            field(FieldId(4), "Retirement", Kind::Deduction, 3, false),
         ]
     }
 
@@ -270,8 +270,12 @@ mod tests {
         let mut fields = fields();
         fields[3].archived = true;
         let checks = [
-            check(1, (2025, 12, 19), &[(1, 100), (4, 10)]),
-            check(2, (2026, 1, 2), &[(1, 100)]),
+            check(
+                PaycheckId(1),
+                (2025, 12, 19),
+                &[(FieldId(1), 100), (FieldId(4), 10)],
+            ),
+            check(PaycheckId(2), (2026, 1, 2), &[(FieldId(1), 100)]),
         ];
         let names = |year: i32| -> Vec<String> {
             sheet(year, &fields, &checks)
@@ -287,18 +291,18 @@ mod tests {
     #[test]
     fn the_sheet_holds_only_the_years_paychecks_oldest_first() {
         let checks = [
-            check(1, (2026, 1, 16), &[(1, 100)]),
-            check(2, (2025, 12, 19), &[(1, 100)]),
-            check(3, (2026, 1, 2), &[(1, 100)]),
+            check(PaycheckId(1), (2026, 1, 16), &[(FieldId(1), 100)]),
+            check(PaycheckId(2), (2025, 12, 19), &[(FieldId(1), 100)]),
+            check(PaycheckId(3), (2026, 1, 2), &[(FieldId(1), 100)]),
         ];
         let s = sheet(2026, &fields(), &checks);
         let ids: Vec<_> = s.columns.iter().map(|c| c.id).collect();
-        assert_eq!(ids, [3, 1]);
+        assert_eq!(ids, [PaycheckId(3), PaycheckId(1)]);
     }
 
     #[test]
     fn a_field_a_paycheck_lacks_is_a_blank_cell_and_zero_in_the_percent_block() {
-        let checks = [check(1, (2026, 1, 2), &[(1, 400_000)])];
+        let checks = [check(PaycheckId(1), (2026, 1, 2), &[(FieldId(1), 400_000)])];
         let s = sheet(2026, &fields(), &checks);
         let tax = s.rows.iter().find(|r| r.name == "Tax").unwrap();
         assert_eq!(tax.cells, [None]);
@@ -310,11 +314,24 @@ mod tests {
     #[test]
     fn the_sheet_totals_each_column_and_the_year() {
         let checks = [
-            check(1, (2026, 1, 2), &[(1, 400_000), (2, 60_000), (4, 20_000)]),
             check(
-                2,
+                PaycheckId(1),
+                (2026, 1, 2),
+                &[
+                    (FieldId(1), 400_000),
+                    (FieldId(2), 60_000),
+                    (FieldId(4), 20_000),
+                ],
+            ),
+            check(
+                PaycheckId(2),
                 (2026, 1, 16),
-                &[(1, 400_000), (3, 50_000), (2, 70_000), (4, 20_000)],
+                &[
+                    (FieldId(1), 400_000),
+                    (FieldId(3), 50_000),
+                    (FieldId(2), 70_000),
+                    (FieldId(4), 20_000),
+                ],
             ),
         ];
         let s = sheet(2026, &fields(), &checks);
@@ -328,9 +345,13 @@ mod tests {
     #[test]
     fn the_percent_block_lists_deductions_then_net_pay() {
         let checks = [check(
-            1,
+            PaycheckId(1),
             (2026, 1, 2),
-            &[(1, 400_000), (2, 60_000), (4, 20_000)],
+            &[
+                (FieldId(1), 400_000),
+                (FieldId(2), 60_000),
+                (FieldId(4), 20_000),
+            ],
         )];
         let s = sheet(2026, &fields(), &checks);
         let labels: Vec<_> = s.percent_rows.iter().map(|r| r.label.as_str()).collect();
@@ -342,8 +363,16 @@ mod tests {
     fn the_ytd_percent_is_the_ratio_of_the_sums_not_an_average() {
         // 10% and 30% average to 20%, but 1,000 of 4,000 is 25%.
         let checks = [
-            check(1, (2026, 1, 2), &[(1, 100_000), (2, 10_000)]),
-            check(2, (2026, 1, 16), &[(1, 300_000), (2, 90_000)]),
+            check(
+                PaycheckId(1),
+                (2026, 1, 2),
+                &[(FieldId(1), 100_000), (FieldId(2), 10_000)],
+            ),
+            check(
+                PaycheckId(2),
+                (2026, 1, 16),
+                &[(FieldId(1), 300_000), (FieldId(2), 90_000)],
+            ),
         ];
         let s = sheet(2026, &fields(), &checks);
         assert_eq!(s.percent_rows[0].ytd, Some(Percent(2500)));
@@ -361,7 +390,11 @@ mod tests {
     #[test]
     fn changing_a_fields_kind_changes_past_net() {
         let mut fields = fields();
-        let checks = [check(1, (2026, 1, 2), &[(1, 400_000), (3, 50_000)])];
+        let checks = [check(
+            PaycheckId(1),
+            (2026, 1, 2),
+            &[(FieldId(1), 400_000), (FieldId(3), 50_000)],
+        )];
         assert_eq!(sheet(2026, &fields, &checks).net, [Cents(450_000)]);
         fields[2].kind = Kind::Deduction;
         assert_eq!(sheet(2026, &fields, &checks).net, [Cents(350_000)]);

@@ -4,21 +4,11 @@ use jluszcz_finance_utils::backup::cli::{self as backup, BackupArgs};
 use jluszcz_finance_utils::cli::CommonArgs;
 use jluszcz_finance_utils::report::cli::{self as report_cli, ReportArgs};
 use paychecker::{BACKUP, config, db, report, tui};
-use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(
     name = "pc",
-    about = "Paychecker: record paychecks and see where each one goes",
-    mut_arg("db", |a| a.help("Database file. Defaults to ~/.local/share/paychecker/paychecks.db")),
-    mut_arg("scratch", |a| a.help(
-        "Run against a copy of the default database in a fresh temporary \
-         directory, leaving the real one untouched -- for trying a migration \
-         before it reaches the file that matters. The copy is left behind and \
-         its path printed, so it can be inspected afterwards, and the report is \
-         written beside it rather than into the configured directory"
-    )),
-    mut_arg("config", |a| a.help("Config file. Defaults to ~/.config/paychecker/config.toml"))
+    about = "Paychecker: record paychecks and see where each one goes"
 )]
 struct Cli {
     #[command(flatten)]
@@ -36,7 +26,7 @@ enum Command {
 }
 
 fn main() -> Result<()> {
-    let cli = Cli::parse();
+    let cli: Cli = jluszcz_finance_utils::cli::parse(config::APP, db::FILE_NAME, true);
     let config_path = cli.common.config_path(config::APP)?;
     // Before the TUI opens: a config that does not parse should say so on a
     // terminal in its normal mode, not after a session's work. `pc report
@@ -63,23 +53,20 @@ fn main() -> Result<()> {
     }
     // The copy's own directory: a `--scratch` run's page goes there, beside
     // the database it was rendered from, never over the real one.
-    let scratch_dir = path
-        .parent()
-        .filter(|_| cli.common.scratch)
-        .map(PathBuf::from);
+    let scratch_dir = cli.common.scratch_dir(&path);
     let today = cli.common.today_or_local();
 
     match cli.command {
         None => {
             let db = tui::run(db::open(&path)?, today)?;
             // The session's work is already saved, so a report that cannot be
-            // written is a warning, not a failed run. A scratch directory's
-            // page is written whatever the config says: it is fresh, and the
-            // page is there to be compared with the real one.
-            report_cli::after_quit(match &scratch_dir {
-                Some(dir) => report::write(&db, dir, today).map(report::Outcome::Written),
-                None => report::write_if_enabled(&db, &cfg, today, scratch),
-            });
+            // written is a warning, not a failed run.
+            report_cli::after_quit(report_cli::on_quit(
+                false,
+                scratch_dir.as_deref(),
+                |dir| report::write(&db, dir, today),
+                || report::write_if_enabled(&db, &cfg, today, scratch),
+            ));
         }
         Some(Command::Report(args)) => {
             let db = db::open(&path)?;

@@ -43,7 +43,7 @@ impl Db {
         self.transaction(|conn| {
             ensure_date_free(conn, date, None)?;
             conn.execute("INSERT INTO paycheck (date) VALUES (?1)", [date])?;
-            let id = conn.last_insert_rowid();
+            let id = PaycheckId(conn.last_insert_rowid());
             write_amounts(conn, id, amounts)?;
             Ok(id)
         })
@@ -97,11 +97,8 @@ fn write_amounts(conn: &Connection, id: PaycheckId, amounts: &[(FieldId, Cents)]
 mod tests {
     use crate::db::{Db, FieldId, open_in_memory};
     use crate::money::Cents;
-    use chrono::NaiveDate;
 
-    fn day(y: i32, m: u32, d: u32) -> NaiveDate {
-        NaiveDate::from_ymd_opt(y, m, d).unwrap()
-    }
+    use jluszcz_finance_utils::testing::day;
 
     fn stub(db: &Db) -> Vec<(FieldId, Cents)> {
         vec![
@@ -184,7 +181,7 @@ mod tests {
         let db = open_in_memory().unwrap();
         let id = db.insert_paycheck(day(2026, 1, 16), &stub(&db)).unwrap();
         assert!(
-            db.update_paycheck(id, day(2026, 1, 16), &[(9_999, Cents(1))])
+            db.update_paycheck(id, day(2026, 1, 16), &[(FieldId(9_999), Cents(1))])
                 .is_err()
         );
         assert_eq!(db.paychecks().unwrap()[0].amounts.len(), 2);

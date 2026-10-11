@@ -103,8 +103,13 @@ pub(super) fn render(frame: &mut Frame, area: Rect, view: &mut SheetView, sheet:
         .enumerate()
         .map(|(i, col)| {
             let date = col.date.format("%m-%d").to_string();
-            if start + i == view.selected {
-                format!("◀ {date} ▶")
+            let at = start + i;
+            if at == view.selected {
+                // An arrow shows only where there is a paycheck to move to;
+                // a space keeps the date where it was.
+                let left = if at > 0 { '◀' } else { ' ' };
+                let right = if at + 1 < len { '▶' } else { ' ' };
+                format!("{left} {date} {right}")
             } else {
                 date
             }
@@ -197,9 +202,25 @@ mod tests {
             lines[0],
             format!(
                 "{:<LABEL$} {:>10} {:>10} │ {:>10}",
-                "", "01-02", "◀ 01-16 ▶", "YTD"
+                "", "01-02", "◀ 01-16  ", "YTD"
             )
         );
+    }
+
+    #[test]
+    fn the_selected_heading_shows_an_arrow_only_toward_another_paycheck() {
+        let fields = fields();
+        let checks = checks(&fields, &[(1, 2), (1, 16), (1, 30)]);
+        let heading = |selected| {
+            let mut view = SheetView::new(2026, selected);
+            drawn(80, &mut view, &fields, &checks)[0].clone()
+        };
+        assert!(heading(0).contains("  01-02 ▶"));
+        assert!(heading(1).contains("◀ 01-16 ▶"));
+        assert!(heading(2).contains("◀ 01-30  "));
+        let one = checks[..1].to_vec();
+        let mut view = SheetView::new(2026, 0);
+        assert!(drawn(80, &mut view, &fields, &one)[0].contains("  01-02  "));
     }
 
     #[test]
@@ -302,13 +323,13 @@ mod tests {
         let lines = drawn(41, &mut view, &fields, &checks);
         assert_eq!(
             lines[0],
-            format!("{:<LABEL$} {:>10} │ {:>10}", "", "◀ 01-30 ▶", "YTD")
+            format!("{:<LABEL$} {:>10} │ {:>10}", "", "◀ 01-30  ", "YTD")
         );
         view.selected = 0;
         let lines = drawn(41, &mut view, &fields, &checks);
         assert_eq!(
             lines[0],
-            format!("{:<LABEL$} {:>10} │ {:>10}", "", "◀ 01-02 ▶", "YTD")
+            format!("{:<LABEL$} {:>10} │ {:>10}", "", "  01-02 ▶", "YTD")
         );
     }
 
@@ -326,7 +347,7 @@ mod tests {
             lines[0],
             format!(
                 "{:<LABEL$} {:>10} {:>10} │ {:>10}",
-                "", "01-16", "◀ 01-30 ▶", "YTD"
+                "", "01-16", "◀ 01-30  ", "YTD"
             )
         );
     }

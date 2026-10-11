@@ -461,7 +461,7 @@ mod tests {
     fn the_sheet_draws_the_years_paychecks() {
         let mut app = standard();
         let text = screen(&mut app, 80, 30);
-        assert!(text.contains("◀ 01-16 ▶"));
+        assert!(text.contains("◀ 01-16  "));
         assert!(text.contains("8,000.00"));
         assert!(!text.contains("12-19"));
     }

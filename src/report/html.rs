@@ -198,6 +198,7 @@ pub fn page(snapshot: &Snapshot) -> String {
     };
     shared::page(
         "Paychecks",
+        None,
         &format!("{STYLE}{}", shared::tab_rules(&tabs(snapshot))),
         &body,
         &format!("Written {}", snapshot.generated_at.format(STAMP_FORMAT)),

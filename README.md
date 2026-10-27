@@ -39,7 +39,7 @@ one tab per year. The page opens on the current year, or the newest year that ha
 Paychecks run newest first, the reverse of the Sheet screen, and YTD stays pinned to the right
 edge while they scroll. On a phone the grid tightens, shows whole dollars (the cents are cut, not
 rounded), and snaps each swipe to a whole paycheck column.
-It carries no script and loads nothing, so it reads on a phone offline. Pointing `dir` at a
+It loads nothing (its one inline script only switches the year tabs), so it reads on a phone offline. Pointing `dir` at a
 synced folder puts it there.
 
 The write happens after the screen is torn down, and prints `wrote 2 KiB to <dir>/Paychecks.html`.

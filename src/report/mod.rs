@@ -147,10 +147,6 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// Every control is a radio and a sibling selector, so a minifier that
-    /// dropped an id or reordered an input past its panel would leave a page
-    /// that renders and then does nothing. Quotes come off before matching,
-    /// so which attributes the minifier unquotes stays its business.
     #[test]
     fn minification_leaves_the_column_bands_intact() {
         let dir = scratch("bands");
@@ -187,8 +183,12 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// The shell's script finds a tab by `data-t` and its panel by id, so a
+    /// minifier that dropped either would leave a page that renders and then
+    /// does nothing. Quotes come off before matching, so which attributes the
+    /// minifier unquotes stays its business.
     #[test]
-    fn minification_leaves_every_tab_and_its_switch_intact() {
+    fn minification_leaves_every_tab_and_its_panel_intact() {
         let dir = scratch("switches");
         let db = with_checks(&[day(2025, 12, 19), day(2026, 1, 2)]);
         let written = write(&db, &dir, day(2026, 1, 2)).unwrap();
@@ -198,34 +198,30 @@ mod tests {
         for year in [2025, 2026] {
             let id = html::tab_id(year);
             assert!(
-                unquoted.contains(&format!("for={id}>{year}</label>")),
-                "no {year} label: {page}"
+                unquoted.contains(&format!("data-t={id}")),
+                "no {year} tab: {page}"
             );
             assert!(
                 unquoted.contains(&format!("id={id}-panel")),
                 "no {year} panel: {page}"
             );
-            assert!(
-                page.contains(&format!("#{id}:checked~#{id}-panel{{display:block}}")),
-                "no {year} switch: {page}"
-            );
         }
-        // The minifier sorts attributes, so the radio is found by its id and
-        // then asked whether it is the checked one.
-        let radio = |id: &str| {
+        // The minifier sorts attributes, so a panel is found by its id and
+        // then asked whether it is the hidden one.
+        let panel = |id: &str| {
             unquoted
                 .split('<')
-                .find(|tag| tag.starts_with("input") && tag.contains(&format!("id={id} ")))
-                .unwrap_or_else(|| panic!("no {id} radio: {page}"))
+                .find(|tag| tag.starts_with("section") && tag.contains(&format!("id={id}-panel")))
+                .unwrap_or_else(|| panic!("no {id} panel: {page}"))
                 .to_string()
         };
         assert!(
-            radio("y2026").contains("checked"),
+            !panel("y2026").contains("hidden"),
             "the page does not open on 2026: {page}"
         );
         assert!(
-            !radio("y2025").contains("checked"),
-            "2025 is checked too: {page}"
+            panel("y2025").contains("hidden"),
+            "2025 is shown too: {page}"
         );
         std::fs::remove_dir_all(&dir).unwrap();
     }

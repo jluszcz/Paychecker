@@ -22,8 +22,8 @@ event loop, status line and text editing, and opening, migrating and snapshottin
 
 `src/report/` writes the Sheet as an HTML page on quit (see README). The page is read
 offline on a phone, so it loads nothing: its only script is the inline one in the shared shell
-(`report::html::app_page`), which switches the year tabs, and the panels are plain tables that
-read without it. The file is renamed onto its name,
+(`report::html::app_page`), which switches the year tabs, and the panels are plain tables, though
+without it only the opening year's panel shows. The file is renamed onto its name,
 never written to it. `html::page` stays readable, because its tests assert against it;
 `jluszcz_finance_utils::report::write` minifies on the way to the disk. `serde` is named only in
 `src/config.rs`.

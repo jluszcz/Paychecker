@@ -20,9 +20,10 @@ money, config paths and sections, the report's minified atomic write, the S3 bac
 event loop, status line and text editing, and opening, migrating and snapshotting the database.
 `db::migration` holds only this app's schema, seed and arms.
 
-`src/report/` writes the Sheet as an HTML page on quit (see README). The page carries **no
-script** and is read offline on a phone. So every control is CSS (the year tabs are radios and
-`:checked ~` rules generated from the same list as the markup). The file is renamed onto its name,
+`src/report/` writes the Sheet as an HTML page on quit (see README). The page is read
+offline on a phone, so it loads nothing: its only script is the inline one in the shared shell
+(`report::html::app_page`), which switches the year tabs, and the panels are plain tables, though
+without it only the opening year's panel shows. The file is renamed onto its name,
 never written to it. `html::page` stays readable, because its tests assert against it;
 `jluszcz_finance_utils::report::write` minifies on the way to the disk. `serde` is named only in
 `src/config.rs`.

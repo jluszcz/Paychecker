@@ -1,20 +1,21 @@
 //! The report as one page.
 //!
-//! Self-contained by requirement: inline CSS, no script, no font, no request
-//! of any kind. A phone opening this out of a sync folder may be offline, and
-//! anything fetched would render half-drawn or not at all. That is also why
-//! the year tabs are radio buttons and sibling selectors: a click handler
-//! would be the one thing on the page that could fail to arrive.
+//! Self-contained by requirement: inline CSS, no font, no request of any
+//! kind. A phone opening this out of a sync folder may be offline, and
+//! anything fetched would render half-drawn or not at all. The only script is
+//! the shared shell's, inline, which switches the year tabs; the panels are
+//! plain tables, so a reader whose script never runs still gets every figure
+//! from the open year.
 
 use super::Snapshot;
 use crate::calc::{self, Sheet};
 use crate::money::Cents;
 use chrono::Datelike;
 use jluszcz_finance_utils::report::escape;
-use jluszcz_finance_utils::report::html::{self as shared, Tab};
+use jluszcz_finance_utils::report::html::{self as shared, App, NavTab};
 
-/// A year's radio id. The `y` is there because a CSS id selector cannot
-/// start with a digit, and `#2026` would match nothing.
+/// A year's tab id. The `y` keeps the id a valid CSS identifier, which
+/// cannot start with a digit.
 pub(super) fn tab_id(year: i32) -> String {
     format!("y{year}")
 }
@@ -27,26 +28,17 @@ fn opening_year(snapshot: &Snapshot) -> Option<i32> {
     years().find(|&y| y == this_year).or_else(|| years().next())
 }
 
-/// One tab per year, newest first, as the sheets are.
-fn tabs(snapshot: &Snapshot) -> Vec<Tab> {
+/// One tab per year, newest first, as the sheets are. An empty snapshot has
+/// the one `Paychecks` tab, whose panel says there is nothing yet.
+fn tabs(snapshot: &Snapshot) -> Vec<NavTab> {
+    if snapshot.sheets.is_empty() {
+        return vec![NavTab::new("paychecks", "Paychecks")];
+    }
     snapshot
         .sheets
         .iter()
-        .map(|s| Tab::new(tab_id(s.year), s.year.to_string()))
+        .map(|s| NavTab::new(tab_id(s.year), s.year.to_string()))
         .collect()
-}
-
-/// The tab bar, and the radios that drive it. Every radio sits ahead of the
-/// nav and every panel, because `:checked ~` only looks forward.
-fn tab_bar(snapshot: &Snapshot) -> String {
-    let tabs = tabs(snapshot);
-    let open =
-        opening_year(snapshot).and_then(|year| snapshot.sheets.iter().position(|s| s.year == year));
-    format!(
-        "{}{}",
-        shared::tab_inputs(&tabs, open),
-        shared::tab_nav(&tabs)
-    )
 }
 
 /// An amount with its cents in a span of their own, which a phone's rules
@@ -117,8 +109,8 @@ fn grid(sheet: &Sheet) -> String {
     )
 }
 
-/// A system font stack, tabular figures, the tab switch, and one media query
-/// for dark mode.
+/// The grid's metrics, and the one color the shell has no token for. The
+/// shell owns the base tokens, the body, the tab bar and the footer.
 ///
 /// A year is up to ~26 paycheck columns, far wider than a phone, so the panel
 /// scrolls sideways and the label column is sticky with an opaque background
@@ -135,21 +127,14 @@ fn grid(sheet: &Sheet) -> String {
 /// the first cell of every row and YTD the last, so `even` minus the last is
 /// exactly the 1st, 3rd, 5th... paycheck; the gap row's one cell is neither.
 ///
-/// A phone gets one media query that buys columns: half the padding, a
-/// smaller face, cents hidden, and a label column fixed at `6rem` that wraps
+/// A phone gets one media query that buys columns: a smaller face, half the
+/// padding, cents hidden, and a label column fixed at `6rem` that wraps
 /// its longer names. The fixed width is what lets the columns snap: a swipe
 /// settles each paycheck against the label column's edge, `6rem` plus its
 /// `0.25rem` padding either side, rather than half under it.
-///
-/// The radios are moved off the page rather than `display:none`d, which would
-/// take them out of the focus order.
 const STYLE: &str = "\
-    :root{color-scheme:light dark;--bg:#ffffff;--fg:#1a1a1a;--rule:#dddddd;--muted:#666666;\
-    --band:#f2f3f5}\
-    @media (prefers-color-scheme: dark){\
-    :root{--bg:#121212;--fg:#eeeeee;--rule:#333333;--muted:#999999;--band:#1e2126}}\
-    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;\
-    margin:0;padding:1rem;background:var(--bg);color:var(--fg)}\
+    :root{--band:#f2f3f5}\
+    @media (prefers-color-scheme: dark){:root{--band:#1e2126}}\
     table{border-collapse:separate;border-spacing:0;font-size:0.82rem}\
     td,th{padding:0.25rem 0.5rem;border-bottom:1px solid var(--rule);text-align:left}\
     th{font-weight:600}\
@@ -160,19 +145,12 @@ const STYLE: &str = "\
     tr>th:first-child{position:sticky;left:0;background:var(--bg);white-space:nowrap}\
     tr.net th,tr.net td{border-top:2px solid var(--fg)}\
     tr.gap td{border-bottom:none;padding:0.5rem}\
-    input.tab{position:absolute;opacity:0;width:0;height:0}\
-    nav{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--rule);margin-bottom:0.8rem}\
-    nav label{padding:0.5rem 0.7rem;margin-bottom:-1px;cursor:pointer;font-weight:600;\
-    color:var(--muted);border-bottom:2px solid transparent}\
-    section.panel{display:none;overflow-x:auto}\
-    footer{border-top:1px solid var(--rule);margin-top:1.5rem;padding-top:0.6rem}\
-    p.stamp{color:var(--muted);margin:0;font-size:0.85rem}\
+    section[role=tabpanel]{overflow-x:auto}\
     @media (max-width: 480px){\
-    body{padding:0.5rem}\
     table{font-size:0.75rem}\
     td,th{padding:0.2rem 0.25rem}\
     .c{display:none}\
-    section.panel{scroll-snap-type:x mandatory;scroll-padding-left:6.5rem}\
+    section[role=tabpanel]{scroll-snap-type:x mandatory;scroll-padding-left:6.5rem}\
     th.d{scroll-snap-align:start}\
     tr>th:first-child{white-space:normal;width:6rem;min-width:6rem;max-width:6rem}\
     }";
@@ -180,29 +158,25 @@ const STYLE: &str = "\
 const STAMP_FORMAT: &str = "%Y-%m-%d %H:%M";
 
 pub fn page(snapshot: &Snapshot) -> String {
-    let body = if snapshot.sheets.is_empty() {
-        "<p>No paychecks yet.</p>".to_string()
+    let panels = if snapshot.sheets.is_empty() {
+        vec!["<p>No paychecks yet.</p>".to_string()]
     } else {
-        let panels: String = snapshot
-            .sheets
-            .iter()
-            .map(|s| {
-                format!(
-                    "<section class=\"panel\" id=\"{}-panel\">{}</section>",
-                    tab_id(s.year),
-                    grid(s)
-                )
-            })
-            .collect();
-        format!("{}{panels}", tab_bar(snapshot))
+        snapshot.sheets.iter().map(grid).collect()
     };
-    shared::page(
-        "Paychecks",
-        None,
-        &format!("{STYLE}{}", shared::tab_rules(&tabs(snapshot))),
-        &body,
-        &format!("Written {}", snapshot.generated_at.format(STAMP_FORMAT)),
-    )
+    let open = opening_year(snapshot)
+        .and_then(|year| snapshot.sheets.iter().position(|s| s.year == year))
+        .unwrap_or(0);
+    shared::app_page(&App {
+        title: "Paychecks",
+        favicon: None,
+        style: STYLE,
+        tabs: &tabs(snapshot),
+        open,
+        panels: &panels,
+        data: None,
+        script: None,
+        stamp: &format!("Written {}", snapshot.generated_at.format(STAMP_FORMAT)),
+    })
 }
 
 #[cfg(test)]
@@ -213,32 +187,29 @@ mod tests {
     use crate::money::Cents;
 
     #[test]
-    fn the_page_makes_no_external_request_and_carries_no_script() {
+    fn the_page_makes_no_external_request_and_loads_no_script() {
         let db = with_checks(&[day(2026, 1, 2)]);
         let page = page(&snapshot(&db, day(2026, 1, 2)));
         assert!(!page.contains("http"), "the page reaches out of itself");
-        assert!(!page.contains("<script"), "the page carries script");
+        assert!(!page.contains("<script src"), "the page loads script");
+        assert!(
+            !page.contains("<link rel=\"stylesheet"),
+            "the page loads CSS"
+        );
     }
 
     #[test]
     fn the_page_has_one_tab_per_year_newest_first() {
         let db = with_checks(&[day(2025, 12, 19), day(2026, 1, 2)]);
         let page = page(&snapshot(&db, day(2026, 1, 2)));
-        let newer = page
-            .find("<label for=\"y2026\">2026</label>")
-            .expect("no 2026 tab");
-        let older = page
-            .find("<label for=\"y2025\">2025</label>")
-            .expect("no 2025 tab");
+        let newer = page.find("data-t=\"y2026\"").expect("no 2026 tab");
+        let older = page.find("data-t=\"y2025\"").expect("no 2025 tab");
         assert!(newer < older, "the years are not newest first");
+        assert!(page.contains("<span class=\"l\">2026</span>"), "{page}");
         for year in [2025, 2026] {
             assert!(
                 page.contains(&format!("id=\"y{year}-panel\"")),
                 "no {year} panel"
-            );
-            assert!(
-                page.contains(&format!("#y{year}:checked~#y{year}-panel{{display:block}}")),
-                "no {year} switch"
             );
         }
     }
@@ -247,15 +218,32 @@ mod tests {
     fn the_page_opens_on_the_year_today_falls_in() {
         let db = with_checks(&[day(2025, 12, 19), day(2026, 1, 2)]);
         let page = page(&snapshot(&db, day(2025, 12, 31)));
-        assert!(page.contains("id=\"y2025\" checked"), "{page}");
-        assert!(!page.contains("id=\"y2026\" checked"), "{page}");
+        assert!(
+            page.contains("id=\"y2025-panel\" role=\"tabpanel\">"),
+            "{page}"
+        );
+        assert!(
+            page.contains("id=\"y2026-panel\" role=\"tabpanel\" hidden>"),
+            "{page}"
+        );
+        assert!(
+            page.contains("data-t=\"y2025\" aria-selected=\"true\""),
+            "{page}"
+        );
     }
 
     #[test]
     fn the_page_opens_on_the_newest_year_when_this_year_has_no_paychecks() {
         let db = with_checks(&[day(2025, 12, 19), day(2026, 1, 2)]);
         let page = page(&snapshot(&db, day(2027, 3, 1)));
-        assert!(page.contains("id=\"y2026\" checked"), "{page}");
+        assert!(
+            page.contains("id=\"y2026-panel\" role=\"tabpanel\">"),
+            "{page}"
+        );
+        assert!(
+            page.contains("id=\"y2025-panel\" role=\"tabpanel\" hidden>"),
+            "{page}"
+        );
     }
 
     #[test]
@@ -278,7 +266,10 @@ mod tests {
     fn an_empty_database_draws_the_no_paychecks_panel() {
         let page = page(&snapshot(&with_checks(&[]), day(2026, 1, 2)));
         assert!(page.contains("No paychecks yet."), "{page}");
-        assert!(!page.contains("<nav>"), "an empty page drew a tab bar");
+        assert!(
+            !page.contains("data-t=\"y"),
+            "an empty page drew a year tab"
+        );
     }
 
     #[test]
@@ -375,10 +366,9 @@ mod tests {
             .nth(1)
             .expect("no narrow-screen rules");
         for rule in [
-            "body{padding:0.5rem}",
             "table{font-size:0.75rem}",
             ".c{display:none}",
-            "section.panel{scroll-snap-type:x mandatory;scroll-padding-left:6.5rem}",
+            "section[role=tabpanel]{scroll-snap-type:x mandatory;scroll-padding-left:6.5rem}",
             "th.d{scroll-snap-align:start}",
             "tr>th:first-child{white-space:normal;width:6rem;min-width:6rem;max-width:6rem}",
         ] {

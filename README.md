@@ -91,10 +91,9 @@ The region line is required: it is read from the profile, and without it every u
 profile must carry static access keys; SSO and `credential_process` profiles will not authenticate.
 
 The bucket is `paychecker-<account id>-<region>-an`, composed rather than chosen so its name says
-nothing to anyone without the profile. Public access is blocked, and objects move to
-Standard-Infrequent Access at 30 days and expire at 365. The `paychecker` profile can only
-`PutObject`, and only as a conditional write that refuses to replace an existing object: it cannot
-read, overwrite, delete, or list backups.
+nothing to anyone without the profile. Public access is blocked, and objects stay in Standard and
+expire at 365 days. The `paychecker` profile can only `PutObject`, and only as a conditional write
+that refuses to replace an existing object: it cannot read, overwrite, delete, or list backups.
 
 `pc backup --status` prints the last upload and the next due date; `pc backup --force` uploads
 regardless of the schedule. `pc backup` uploads whatever database it is given, `--db` included.
